@@ -1,0 +1,23 @@
+rules_version = '2';
+// DEV-ONLY rules for testing collaboration with guest accounts.
+//
+// Guest mode signs in anonymously but uses a per-tab app id that differs from the
+// Firebase auth uid, so the production rules (which check ownerId/uid == auth.uid)
+// would reject guest writes. These rules only require an authenticated request.
+// DO NOT use in production — publish firestore.rules there instead.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    match /maps/{mapId} {
+      allow read, create, update, delete: if signedIn();
+      // Any subcollection under a map (presence, render, meta, …) is collaborative
+      // and writable by any signed-in user. Recursive so new subcollections are
+      // covered without republishing rules.
+      match /{document=**} {
+        allow read, write: if signedIn();
+      }
+    }
+  }
+}

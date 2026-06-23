@@ -1,0 +1,37 @@
+rules_version = '2';
+// Foundation rules: any signed-in user is part of the shared workspace — they can
+// read all maps and create them. Editing/deleting a map is owner-only for now; the
+// presence subcollection is writable by any signed-in collaborator. Tighten with a
+// members/sharing model when collaboration features land.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /maps/{mapId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /presence/{uid} {
+        allow read: if signedIn();
+        allow write: if signedIn() && uid == request.auth.uid;
+      }
+
+      // Rendered floorplan (SVG + booth data). Readable by collaborators; written by
+      // the map owner (the conversion step runs client-side as the owner).
+      match /render/{docId} {
+        allow read: if signedIn();
+        allow write: if signedIn() &&
+          get(/databases/$(database)/documents/maps/$(mapId)).data.ownerId == request.auth.uid;
+      }
+
+      // Booth management (exhibitor names + statuses) is collaborative — any signed-in
+      // user can read and edit it.
+      match /meta/{docId} {
+        allow read, write: if signedIn();
+      }
+    }
+  }
+}

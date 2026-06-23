@@ -1,0 +1,14 @@
+/node_modules
+/.next
+/out
+/build
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+npm-debug.log*
+# keep .env.local committed? No — it holds project config. Public Firebase keys are
+# safe to expose client-side, but leave out of VCS by default.
+.env*.local
+
+# Server-side map backups (recoverable fallback store, written at runtime).
+/backups

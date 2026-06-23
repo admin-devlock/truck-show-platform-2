@@ -1,0 +1,25 @@
+# Dependencies & build output
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# Large CAD source files — shared out-of-band, not in version control
+*.dwg
+
+# Prototyping pipeline (work/) — large or regenerable artifacts; .py scripts are kept
+work/plaza.min.json
+work/*.png
+work/*.dxf
+
+# Runtime map backups (recoverable fallback store, written by /api/backup)
+backups/
+
+# Local, user-specific Claude settings
+.claude/settings.local.json
+
+# Misc
+.DS_Store
+.env*.local
+*.log

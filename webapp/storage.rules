@@ -1,0 +1,16 @@
+rules_version = '2';
+// Uploaded CAD sources + rendered SVGs. Any signed-in user can read; uploads are
+// allowed for signed-in users under sources/{mapId}/. Lock down further once a
+// per-map membership model exists.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /sources/{mapId}/{fileName=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    match /renders/{mapId}/{fileName=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}
