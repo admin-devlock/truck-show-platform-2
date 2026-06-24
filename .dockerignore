@@ -1,0 +1,19 @@
+# Keep the build context small and reproducible.
+.git
+**/node_modules
+**/.next
+**/out
+**/build
+**/*.tsbuildinfo
+
+# Never bake local env into the image — config comes from build args.
+**/.env*.local
+
+# Large CAD source + prototyping data (not needed to build the webapp).
+*.dwg
+work
+
+# Runtime + misc
+**/backups
+**/.DS_Store
+*.log

@@ -62,7 +62,10 @@ NEAR_EQUAL_RATIO = 0.6
 # ---- load ----
 with open(IN_JSON, encoding="utf-8", errors="replace") as f:
     raw = f.read()
-raw = re.sub(r"(?<=[ ,\[:])(-?)nan(?=[, \]\n])", r"\1NaN", raw)
+# dwgread emits bare nan/inf tokens (and, in newer libredwg, "-nan") that aren't valid
+# JSON. Map them to Python's accepted literals. NOTE: JSON has no "-NaN", so the sign is
+# dropped for nan (a signed NaN is meaningless here anyway).
+raw = re.sub(r"(?<=[ ,\[:])-?nan(?=[, \]\n])", "NaN", raw)
 raw = re.sub(r"(?<=[ ,\[:])(-?)inf(?=[, \]\n])", r"\1Infinity", raw)
 doc = json.loads(raw)
 del raw
