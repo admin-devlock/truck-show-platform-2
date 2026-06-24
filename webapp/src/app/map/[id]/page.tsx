@@ -4,7 +4,7 @@ import { use, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SignInGate } from "@/components/SignInGate";
 import { TopBar } from "@/components/TopBar";
-import { PanZoom, type Booth, type PanZoomHandle } from "@/components/PanZoom";
+import { PanZoom, type Booth, type PanZoomHandle, type RemoteCursor } from "@/components/PanZoom";
 import { BoothInfoPanel } from "@/components/BoothInfoPanel";
 import { StatusManager } from "@/components/StatusManager";
 import { SearchPanel } from "@/components/SearchPanel";
@@ -25,7 +25,7 @@ import {
   type BoothData,
   type Level,
 } from "@/lib/maps";
-import { usePresence } from "@/lib/presence";
+import { usePresence, publishCursor } from "@/lib/presence";
 import { useAutoBackup } from "@/lib/backup";
 import { applyBoothSplits } from "@/lib/booths";
 
@@ -82,6 +82,28 @@ function Viewer({ id }: { id: string }) {
 
   // Regularly back the map up to the host filesystem (recoverable fallback copy).
   useAutoBackup(map, activeLevel?.status === "ready");
+
+  // Live cursors: broadcast ours (throttled) and show collaborators' on this level.
+  const cursorThrottle = useRef(0);
+  const onCursorMove = (wx: number, wy: number) => {
+    if (!identity || !activeLevel) return;
+    const now = Date.now();
+    if (now - cursorThrottle.current < 100) return; // ~10 updates/sec max
+    cursorThrottle.current = now;
+    publishCursor(id, identity.uid, wx, wy, activeLevel.id);
+  };
+  const cursors = useMemo<RemoteCursor[]>(() => {
+    const now = Date.now();
+    return others
+      .filter(
+        (p) =>
+          p.cursorLevel === activeLevel?.id &&
+          typeof p.cx === "number" &&
+          typeof p.cy === "number" &&
+          now - (p.cursorAt ?? 0) < 5000,
+      )
+      .map((p) => ({ uid: p.uid, name: p.name, color: p.color, x: p.cx!, y: p.cy! }));
+  }, [others, activeLevel?.id]);
 
   // The active level's rendered SVG + its assignments/statuses (collaborative, live).
   useEffect(() => {
@@ -208,6 +230,8 @@ function Viewer({ id }: { id: string }) {
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
             highlight={searchMatches}
+            cursors={cursors}
+            onCursorMove={onCursorMove}
           />
         )}
         {map && activeLevel?.status === "ready" && !activeLevel.svgUrl && render && (
@@ -221,6 +245,8 @@ function Viewer({ id }: { id: string }) {
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
             highlight={searchMatches}
+            cursors={cursors}
+            onCursorMove={onCursorMove}
           />
         )}
         {map && activeLevel?.status === "ready" && !activeLevel.svgUrl && !render && (

@@ -23,7 +23,28 @@ export type Presence = {
   photo: string | null;
   color: string;
   lastActive: Timestamp | null;
+  // Live cursor (world/SVG coords) + which level it's on, with a client timestamp so
+  // stale cursors can be aged out independently of the slower presence heartbeat.
+  cx?: number;
+  cy?: number;
+  cursorLevel?: string;
+  cursorAt?: number;
 };
+
+/** Publish this user's cursor position (world coords). Throttle calls at the caller. */
+export function publishCursor(
+  mapId: string,
+  uid: string,
+  cx: number,
+  cy: number,
+  levelId: string,
+) {
+  return setDoc(
+    doc(db, "maps", mapId, "presence", uid),
+    { cx, cy, cursorLevel: levelId, cursorAt: Date.now(), lastActive: serverTimestamp() },
+    { merge: true },
+  ).catch(() => {});
+}
 
 const COLORS = [
   "#1a73e8", "#d93025", "#1e8e3e", "#e37400",
@@ -46,13 +67,17 @@ export function usePresence(mapId: string | null, me: Identity | null) {
     if (!mapId || !me) return;
     const meRef = doc(db, "maps", mapId, "presence", me.uid);
     const write = () =>
-      setDoc(meRef, {
-        uid: me.uid,
-        name: me.name,
-        photo: me.photo,
-        color: me.color,
-        lastActive: serverTimestamp(),
-      });
+      setDoc(
+        meRef,
+        {
+          uid: me.uid,
+          name: me.name,
+          photo: me.photo,
+          color: me.color,
+          lastActive: serverTimestamp(),
+        },
+        { merge: true }, // preserve live cursor fields written between heartbeats
+      );
 
     write();
     const beat = setInterval(write, 10_000);

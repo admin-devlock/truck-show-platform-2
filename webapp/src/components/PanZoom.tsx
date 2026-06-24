@@ -40,6 +40,8 @@ export type Booth = {
 
 const TAP_PX = 5; // pointer movement under this = a click (select), over it = a pan
 
+export type RemoteCursor = { uid: string; name: string; color: string; x: number; y: number };
+
 // Crisp, zoom-independent stroke weights (booths emphasised over the venue).
 const STROKE_CSS = `
   .pz-svg :is(line,polyline,path,circle,rect) { vector-effect: non-scaling-stroke; stroke-width: 0.9px; }
@@ -87,6 +89,8 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   assignments?: Record<string, BoothAssignment>;
   statusTypes?: StatusType[];
   highlight?: Set<number> | null;
+  cursors?: RemoteCursor[];
+  onCursorMove?: (wx: number, wy: number) => void;
 }>(function PanZoom({
   svgUrl,
   svg: svgProp,
@@ -96,6 +100,8 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   assignments,
   statusTypes,
   highlight,
+  cursors,
+  onCursorMove,
 }, ref) {
   // statusId -> colour, across all status types
   const statusColor = useMemo(() => {
@@ -106,6 +112,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   const hostRef = useRef<HTMLDivElement>(null); // holds the injected <svg>
   const containerRef = useRef<HTMLDivElement>(null);
   const svgElRef = useRef<SVGSVGElement | null>(null);
+  const cursorLayerRef = useRef<HTMLDivElement>(null); // holds remote-cursor DOM nodes
 
   const [world, setWorld] = useState<World | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -163,13 +170,32 @@ export const PanZoom = forwardRef<PanZoomHandle, {
     };
   }, [svgUrl, svgProp]);
 
+  const positionCursors = useCallback(() => {
+    const layer = cursorLayerRef.current;
+    const el = containerRef.current;
+    const cam = camRef.current;
+    if (!layer || !el || !cam) return;
+    const cw = el.clientWidth || 1;
+    const ch = el.clientHeight || 1;
+    layer.childNodes.forEach((node) => {
+      const c = node as HTMLElement;
+      const wx = Number(c.dataset.wx);
+      const wy = Number(c.dataset.wy);
+      const sx = ((wx - cam.x) / cam.w) * cw;
+      const sy = ((wy - cam.y) / cam.h) * ch;
+      c.style.transform = `translate(${sx}px, ${sy}px)`;
+      c.style.display = sx < -40 || sy < -40 || sx > cw + 40 || sy > ch + 40 ? "none" : "block";
+    });
+  }, []);
+
   const apply = useCallback(() => {
     const svg = svgElRef.current;
     const cam = camRef.current;
     if (!svg || !cam) return;
     svg.setAttribute("viewBox", `${cam.x} ${cam.y} ${cam.w} ${cam.h}`);
     setZoomPct(Math.round((fitWRef.current / cam.w) * 100));
-  }, []);
+    positionCursors();
+  }, [positionCursors]);
 
   const fit = useCallback(() => {
     const el = containerRef.current;
@@ -325,6 +351,37 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       svg.querySelector(`.booth-hit polygon[data-bi="${i}"]`)?.setAttribute("data-match", "true"),
     );
   }, [highlight, world, booths]);
+
+  // Remote collaborator cursors: reconcile DOM nodes by uid, then position them.
+  useEffect(() => {
+    const layer = cursorLayerRef.current;
+    if (!layer) return;
+    const esc = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const seen = new Set<string>();
+    (cursors ?? []).forEach((c) => {
+      seen.add(c.uid);
+      let node = layer.querySelector<HTMLElement>(`[data-uid="${c.uid}"]`);
+      if (!node) {
+        node = document.createElement("div");
+        node.dataset.uid = c.uid;
+        node.style.cssText =
+          "position:absolute;top:0;left:0;pointer-events:none;will-change:transform;transition:transform 100ms linear;z-index:30;";
+        node.innerHTML =
+          `<svg width="20" height="20" viewBox="0 0 24 24" style="display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))">` +
+          `<path d="M4 2l6 16 2.6-6.8L19 8.6z" fill="${c.color}" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>` +
+          `<span style="position:absolute;left:16px;top:14px;white-space:nowrap;font:600 11px/1.4 Inter,system-ui,sans-serif;` +
+          `color:#fff;background:${c.color};padding:1px 6px;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.25)">${esc(c.name)}</span>`;
+        layer.appendChild(node);
+      }
+      node.dataset.wx = String(c.x);
+      node.dataset.wy = String(c.y);
+    });
+    layer.querySelectorAll<HTMLElement>("[data-uid]").forEach((n) => {
+      if (!seen.has(n.dataset.uid!)) n.remove();
+    });
+    positionCursors();
+  }, [cursors, positionCursors]);
 
   // Drive the camera to a booth (used by search results). Zooms so the booth fills a
   // comfortable fraction of the view, keeping some surrounding context.
@@ -514,10 +571,19 @@ export const PanZoom = forwardRef<PanZoomHandle, {
     };
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    const d = drag.current;
     const el = containerRef.current;
     const cam = camRef.current;
-    if (!d || !el || !cam) return;
+    if (!el || !cam) return;
+    // Broadcast our cursor (world coords) on every move, dragging or not.
+    if (onCursorMove) {
+      const rect = el.getBoundingClientRect();
+      onCursorMove(
+        cam.x + ((e.clientX - rect.left) / (el.clientWidth || 1)) * cam.w,
+        cam.y + ((e.clientY - rect.top) / (el.clientHeight || 1)) * cam.h,
+      );
+    }
+    const d = drag.current;
+    if (!d) return;
     if (Math.abs(e.clientX - d.px) > TAP_PX || Math.abs(e.clientY - d.py) > TAP_PX) d.moved = true;
     const worldPerPxX = cam.w / (el.clientWidth || 1);
     const worldPerPxY = cam.h / (el.clientHeight || 1);
@@ -563,6 +629,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
         onPointerLeave={onPointerUp}
       >
         <div ref={hostRef} className="pz-svg w-full h-full" />
+        <div ref={cursorLayerRef} className="absolute inset-0 overflow-hidden pointer-events-none" />
       </div>
 
       {error && (
