@@ -10,7 +10,7 @@ import { StatusManager } from "@/components/StatusManager";
 import { SearchPanel } from "@/components/SearchPanel";
 import { ExhibitorImportDialog } from "@/components/ExhibitorImportDialog";
 import { ExportDialog } from "@/components/ExportDialog";
-import { LevelBar } from "@/components/LevelBar";
+import { LevelSwitcher } from "@/components/LevelSwitcher";
 import { NewLevelDialog } from "@/components/NewLevelDialog";
 import { PresenceBar } from "@/components/PresenceBar";
 import { useAuth } from "@/lib/auth";
@@ -192,7 +192,7 @@ function Viewer({ id }: { id: string }) {
       />
 
       {map && (
-        <LevelBar
+        <LevelSwitcher
           map={map}
           levels={levels}
           activeLevelId={activeLevel?.id ?? ""}
