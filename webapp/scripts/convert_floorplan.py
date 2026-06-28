@@ -26,6 +26,8 @@ VENUE_MAX_LEN = 80000.0     # drop absurdly long strays (leaders/construction li
 
 BOOTH_LAYERS = [
     ("BOOTHLINE", "built"),
+    ("BOOTH-SPACE", "built"),  # Mezzanine/Halls draw booth footprints here, not BOOTHLINE
+    ("DIV08-STAND SPACE", "space_only"),
     ("P-SPACE_ONLY", "space_only"),
     ("P-SPACE_ONLY_HIDE ON BUILD", "space_only"),
     ("P-SPACE_ONLY_HIDE-ON-BUILD", "space_only"),
