@@ -14,8 +14,8 @@ import {
  * expanded it opens a 3D "fanned deck" — the active floorplan stands flat in front,
  * the others tilt behind it. Click a card to bring it forward (switch levels).
  */
-const TILT = 38; // degrees, back cards
-const SPREAD = 54; // px each card rises/recedes behind the front one
+const TILT = 32; // degrees, back cards
+const SPREAD = 74; // px each card behind rises (enough to peek its name bar)
 
 export function LevelSwitcher({
   map,
@@ -143,13 +143,13 @@ function LevelDeck({
 
         <div
           className="relative rounded-md bg-[color:var(--color-canvas)]"
-          style={{ height: 360, perspective: "1300px", perspectiveOrigin: "50% 34%" }}
+          style={{ height: 380, perspective: "1500px", perspectiveOrigin: "50% 28%" }}
         >
           {ordered.map((lvl, p) => {
             const dy = -(p * SPREAD);
-            const dz = -(p * SPREAD * 0.85);
+            const dz = -(p * 60);
             const rot = p === 0 ? 0 : TILT;
-            const scale = 1 - p * 0.05;
+            const scale = 1 - p * 0.04;
             return (
               <button
                 key={lvl.id}
@@ -157,26 +157,26 @@ function LevelDeck({
                 className="absolute block text-left overflow-hidden bg-white border border-[color:var(--color-line)] rounded-md"
                 style={{
                   left: "50%",
-                  bottom: 28,
+                  bottom: 22,
                   width: 360,
-                  height: 226,
-                  transformOrigin: "50% 100%",
+                  height: 222,
+                  transformOrigin: "50% 50%",
                   transform: `translateX(-50%) translateY(${dy}px) translateZ(${dz}px) rotateX(${rot}deg) scale(${scale})`,
-                  opacity: Math.max(0.5, 1 - p * 0.2),
+                  opacity: p === 0 ? 1 : 0.94,
                   zIndex: 100 - p,
-                  boxShadow: `0 ${10 - p * 2}px ${26 - p * 5}px rgba(60,64,67,${(0.22 - p * 0.05).toFixed(2)})`,
+                  boxShadow: `0 ${12 - p}px ${28 - p * 4}px rgba(60,64,67,${(0.24 - p * 0.04).toFixed(2)})`,
                   transition:
                     "transform .5s cubic-bezier(.2,.7,.2,1), opacity .5s, box-shadow .5s",
                   cursor: "pointer",
                 }}
               >
-                <div className="lvl-thumb h-[182px] border-b border-[color:var(--color-line)]">
-                  <LevelThumb level={lvl} />
-                </div>
-                <div className="h-[44px] flex items-center gap-2 px-3.5">
+                <div
+                  className="h-[42px] flex items-center gap-2 px-3.5 border-b border-[color:var(--color-line)]"
+                  style={{ background: p === 0 ? "var(--color-accent-soft)" : "#fff" }}
+                >
                   <span className="text-sm font-medium truncate">{lvl.name}</span>
                   {p === 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#e8f0fe] text-[color:var(--color-accent)]">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white text-[color:var(--color-accent)]">
                       Active
                     </span>
                   )}
@@ -187,6 +187,9 @@ function LevelDeck({
                         ? `${lvl.boothCount} booths`
                         : ""}
                   </span>
+                </div>
+                <div className="lvl-thumb h-[180px]">
+                  <LevelThumb level={lvl} />
                 </div>
               </button>
             );
