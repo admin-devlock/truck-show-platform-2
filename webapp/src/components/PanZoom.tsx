@@ -78,7 +78,7 @@ const LABEL_W_FILL = 0.9; // fraction of booth width one line may span
 const LABEL_H_FILL = 0.86; // fraction of booth height the whole block may span
 const SUB_RATIO = 0.6; // secondary line size relative to the primary line
 const GAP_RATIO = 0.16; // gap between the two lines, relative to the primary line
-const MAX_LABEL_M = 1.4; // cap a primary line at ~1.4 m of drawing units (the "limit")
+const MAX_LABEL_M = 2.2; // cap a primary line at ~2.2 m of drawing units (the "limit")
 const MIN_LABEL_M = 0.18; // skip labels that would be smaller than this (illegible)
 
 /** Largest primary-line font that fits the booth (width + height + real-world cap).
@@ -327,7 +327,17 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       }
 
       // label — grows to nearly fill the booth, capped at a real-world max.
-      const unitsPerM = b.width_m ? bw / b.width_m : b.depth_m ? bh / b.depth_m : 0;
+      // Scale (drawing units per metre) from AREA, so it's the same for every booth
+      // regardless of orientation/aspect (bbox_width / width_m breaks on tall booths).
+      let polyAreaU = 0;
+      for (let i = 0; i < b.polygon.length; i++) {
+        const [x1, y1] = b.polygon[i];
+        const [x2, y2] = b.polygon[(i + 1) % b.polygon.length];
+        polyAreaU += x1 * y2 - x2 * y1;
+      }
+      polyAreaU = Math.abs(polyAreaU) / 2;
+      const unitsPerM =
+        b.area_m2 && polyAreaU ? Math.sqrt(polyAreaU / b.area_m2) : b.width_m ? bw / b.width_m : 0;
       const minFont = unitsPerM > 0 ? MIN_LABEL_M * unitsPerM : 120;
       const exhibitor = a?.exhibitor?.trim();
       if (exhibitor) {
