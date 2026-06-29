@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { Booth } from "./PanZoom";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
 
@@ -15,6 +15,10 @@ export function SearchPanel({
   booths,
   assignments,
   statusTypes,
+  query,
+  view,
+  onQueryChange,
+  onViewChange,
   onResults,
   onPick,
   onFrameAll,
@@ -23,13 +27,16 @@ export function SearchPanel({
   booths: Booth[];
   assignments: Record<string, BoothAssignment>;
   statusTypes: StatusType[];
+  query: string; // controlled + synced across collaborators
+  view: "list" | "map";
+  onQueryChange: (q: string) => void;
+  onViewChange: (v: "list" | "map") => void;
   onResults: (indices: number[]) => void;
   onPick: (index: number) => void;
   onFrameAll: (indices: number[]) => void;
   onClose: () => void;
 }) {
-  const [q, setQ] = useState("");
-  const [view, setView] = useState<"list" | "map">("list");
+  const q = query;
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => inputRef.current?.focus(), []);
@@ -80,7 +87,7 @@ export function SearchPanel({
           <input
             ref={inputRef}
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") onClose();
               if (e.key === "Enter" && matches.length) onPick(matches[0]);
@@ -107,7 +114,7 @@ export function SearchPanel({
             {(["list", "map"] as const).map((v) => (
               <button
                 key={v}
-                onClick={() => setView(v)}
+                onClick={() => onViewChange(v)}
                 className={`px-2.5 py-1 capitalize ${
                   view === v
                     ? "bg-[color:var(--color-accent)] text-white"

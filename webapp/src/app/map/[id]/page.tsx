@@ -19,6 +19,8 @@ import {
   subscribeRender,
   subscribeBoothData,
   subscribeLevels,
+  subscribeSearch,
+  setSearchState,
   renameMap,
   type MapDoc,
   type MapRender,
@@ -56,11 +58,57 @@ function Viewer({ id }: { id: string }) {
   const [showStatuses, setShowStatuses] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
   const [showAddLevel, setShowAddLevel] = useState(false);
   const [searchMatches, setSearchMatches] = useState<Set<number> | null>(null);
+  // Search is collaborative: open-state, query and view are shared across viewers
+  // (the matches highlight is computed locally per level). Map/level stay per-user.
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchView, setSearchView] = useState<"list" | "map">("list");
+  const searchWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panzoomRef = useRef<PanZoomHandle>(null);
   const others = usePresence(id, identity);
+
+  // Live-sync the shared search state. Ignore the echo of our own writes (by === us).
+  useEffect(() => {
+    return subscribeSearch(id, (s) => {
+      if (s.by && s.by === identity?.uid) return;
+      setShowSearch(s.active);
+      setSearchView(s.view);
+      setSearchQuery(s.query);
+      if (!s.active) setSearchMatches(null);
+    });
+  }, [id, identity?.uid]);
+
+  // Push a search change to all collaborators (query writes are debounced).
+  const pushSearch = (patch: { query?: string; active?: boolean; view?: "list" | "map" }, debounce = false) => {
+    if (!identity) return;
+    if (searchWriteTimer.current) clearTimeout(searchWriteTimer.current);
+    if (debounce) {
+      searchWriteTimer.current = setTimeout(() => setSearchState(id, identity.uid, patch), 200);
+    } else {
+      setSearchState(id, identity.uid, patch);
+    }
+  };
+  const onSearchQuery = (q: string) => {
+    setSearchQuery(q);
+    pushSearch({ query: q, active: true }, true);
+  };
+  const onSearchView = (v: "list" | "map") => {
+    setSearchView(v);
+    pushSearch({ view: v });
+  };
+  const toggleSearch = () => {
+    const next = !showSearch;
+    setShowSearch(next);
+    if (!next) setSearchMatches(null);
+    pushSearch({ active: next });
+  };
+  const closeSearch = () => {
+    setShowSearch(false);
+    setSearchMatches(null);
+    pushSearch({ active: false });
+  };
 
   useEffect(() => subscribeMap(id, setMap), [id]);
   // A map's levels (CAD floorplans). Legacy maps yield a single synthesized level.
@@ -167,7 +215,7 @@ function Viewer({ id }: { id: string }) {
         right={
           <div className="flex items-center gap-3">
             {activeLevel?.status === "ready" && booths && booths.length > 0 && (
-              <button onClick={() => setShowSearch((v) => !v)} className="btn btn-ghost">
+              <button onClick={toggleSearch} className="btn btn-ghost">
                 Search
               </button>
             )}
@@ -269,16 +317,17 @@ function Viewer({ id }: { id: string }) {
             booths={booths}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
+            query={searchQuery}
+            view={searchView}
+            onQueryChange={onSearchQuery}
+            onViewChange={onSearchView}
             onResults={(idx) => setSearchMatches(idx.length ? new Set(idx) : null)}
             onPick={(i) => {
               setSelected(i);
               panzoomRef.current?.focusBooth(i);
             }}
             onFrameAll={(idx) => panzoomRef.current?.frameBooths(idx)}
-            onClose={() => {
-              setShowSearch(false);
-              setSearchMatches(null);
-            }}
+            onClose={closeSearch}
           />
         )}
         {showImport && activeLevel && (

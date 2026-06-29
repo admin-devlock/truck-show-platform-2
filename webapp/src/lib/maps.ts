@@ -295,6 +295,30 @@ export async function setActiveStatusType(id: string, activeStatusTypeId: string
   await setDoc(boothMeta(id), { activeStatusTypeId }, { merge: true });
 }
 
+// ---------------------------------------------------------------------------
+// Collaborative search: the search query, view mode and open/closed state are shared,
+// so a search one person runs shows up for everyone. (Navigation — which map and which
+// level — stays per-user; matches are computed locally by each viewer for its level.)
+// `by` is the uid of the last writer, so a client ignores the echo of its own writes.
+// ---------------------------------------------------------------------------
+export type SearchState = { query: string; active: boolean; view: "list" | "map"; by: string };
+const searchDoc = (id: string) => doc(db, "maps", id, "meta", "search");
+
+export function subscribeSearch(id: string, cb: (s: SearchState) => void) {
+  return onSnapshot(searchDoc(id), (snap) => {
+    const d = (snap.data() as Partial<SearchState>) || {};
+    cb({ query: d.query ?? "", active: d.active ?? false, view: d.view ?? "list", by: d.by ?? "" });
+  });
+}
+
+export async function setSearchState(
+  id: string,
+  by: string,
+  patch: Partial<Omit<SearchState, "by">>,
+) {
+  await setDoc(searchDoc(id), { ...patch, by }, { merge: true }).catch(() => {});
+}
+
 /** One-shot read of a level's assignments + the map-wide status types. */
 export async function getBoothDataOnce(id: string, levelId: string): Promise<BoothData> {
   const [aSnap, sSnap] = await Promise.all([getDoc(assignDoc(id, levelId)), getDoc(boothMeta(id))]);
