@@ -97,7 +97,6 @@ function LevelDeck({
   onClose: () => void;
 }) {
   const [current, setCurrent] = useState(activeLevelId);
-  const closing = useRef(false);
 
   // Stack order: active first (flat, front), then the rest in their natural order.
   const ordered = useMemo(() => {
@@ -113,15 +112,9 @@ function LevelDeck({
   }, [onClose]);
 
   const pick = (id: string) => {
-    if (closing.current) return;
-    if (id === current) {
-      onClose();
-      return;
-    }
-    setCurrent(id); // animate the chosen card to the front…
-    onSelect(id);
-    closing.current = true;
-    setTimeout(onClose, 430); // …then close once it's settled
+    if (id === current) return; // already active — keep the deck open
+    setCurrent(id); // animate the chosen card to the front; deck stays open
+    onSelect(id); // switch the map behind it
   };
 
   return (
