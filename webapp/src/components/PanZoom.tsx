@@ -70,6 +70,35 @@ const STROKE_CSS = `
 
 const CW = 0.62; // approx glyph width / font size, for fitting text into booths
 
+// Booth-label sizing. A label is a two-line block (a primary line + a smaller line
+// beneath). It grows to nearly fill its booth — bounded by booth width, booth height,
+// and a real-world cap (MAX_LABEL_M) so the text plateaus and stays a small part of a
+// big booth while filling a small one.
+const LABEL_W_FILL = 0.9; // fraction of booth width one line may span
+const LABEL_H_FILL = 0.86; // fraction of booth height the whole block may span
+const SUB_RATIO = 0.6; // secondary line size relative to the primary line
+const GAP_RATIO = 0.16; // gap between the two lines, relative to the primary line
+const MAX_LABEL_M = 1.4; // cap a primary line at ~1.4 m of drawing units (the "limit")
+const MIN_LABEL_M = 0.18; // skip labels that would be smaller than this (illegible)
+
+/** Largest primary-line font that fits the booth (width + height + real-world cap).
+ *  secondaryLen = 0 means a single line; unitsPerM = 0 disables the real-world cap. */
+function fitLabelFont(
+  bw: number,
+  bh: number,
+  unitsPerM: number,
+  primaryLen: number,
+  secondaryLen: number,
+): number {
+  const blockFactor = secondaryLen > 0 ? 1 + GAP_RATIO + SUB_RATIO : 1;
+  let f = (bh * LABEL_H_FILL) / blockFactor; // height of the whole block
+  f = Math.min(f, (bw * LABEL_W_FILL) / (Math.max(primaryLen, 1) * CW)); // primary width
+  if (secondaryLen > 0)
+    f = Math.min(f, (bw * LABEL_W_FILL) / (secondaryLen * CW * SUB_RATIO)); // secondary width
+  if (unitsPerM > 0) f = Math.min(f, MAX_LABEL_M * unitsPerM); // real-world cap
+  return f;
+}
+
 /** Imperative handle so search (and other UI) can drive the camera to a booth. */
 export type PanZoomHandle = {
   focusBooth: (index: number) => void;
@@ -297,27 +326,35 @@ export const PanZoom = forwardRef<PanZoomHandle, {
         statusG.appendChild(poly);
       }
 
-      // label
+      // label — grows to nearly fill the booth, capped at a real-world max.
+      const unitsPerM = b.width_m ? bw / b.width_m : b.depth_m ? bh / b.depth_m : 0;
+      const minFont = unitsPerM > 0 ? MIN_LABEL_M * unitsPerM : 120;
       const exhibitor = a?.exhibitor?.trim();
       if (exhibitor) {
-        // exhibitor name fit to the booth (single line), with the number small above
-        const fnNum = Math.min(bh * 0.22, (bw * 0.86) / ((b.number?.length || 1) * CW), 1200);
-        const fName = Math.min(bh * 0.4, (bw * 0.92) / (exhibitor.length * CW), 2600);
-        if (fName >= 150) {
-          if (b.number && fnNum >= 130)
-            labelG.appendChild(txt(cx, cy - fName * 0.62, fnNum, "#80868b", esc(b.number)));
-          labelG.appendChild(txt(cx, cy + (b.number && fnNum >= 130 ? fName * 0.12 : 0), fName, "#202124", esc(exhibitor), "600"));
+        // exhibitor name is the big (primary) line; the booth number sits small above it
+        const showNum = !!b.number;
+        const fName = fitLabelFont(bw, bh, unitsPerM, exhibitor.length, showNum ? b.number!.length : 0);
+        if (fName < minFont) return;
+        const fNum = fName * SUB_RATIO;
+        if (showNum && fNum >= minFont * 0.75) {
+          const gap = fName * GAP_RATIO;
+          const block = fNum + gap + fName;
+          labelG.appendChild(txt(cx, cy - block / 2 + fNum / 2, fNum, "#80868b", esc(b.number!)));
+          labelG.appendChild(txt(cx, cy + block / 2 - fName / 2, fName, "#202124", esc(exhibitor), "600"));
+        } else {
+          labelG.appendChild(txt(cx, cy, fName, "#202124", esc(exhibitor), "600"));
         }
       } else if (b.number) {
+        // booth number is the big (primary) line; dimensions sit small below it
         const dim = b.width_m != null ? `${round1(b.width_m)} × ${round1(b.depth_m!)}` : "";
-        const fN = Math.min(bh * 0.42, (bw * 0.86) / (b.number.length * CW), 2200);
-        if (fN < 240) return;
-        const fD = dim ? Math.min(fN * 0.6, (bw * 0.86) / (dim.length * CW)) : 0;
-        if (dim && fD >= 200) {
-          const gap = fN * 0.12;
+        const fN = fitLabelFont(bw, bh, unitsPerM, b.number.length, dim ? dim.length : 0);
+        if (fN < minFont) return;
+        const fD = dim ? fN * SUB_RATIO : 0;
+        if (dim && fD >= minFont * 0.7) {
+          const gap = fN * GAP_RATIO;
           const block = fN + gap + fD;
-          labelG.appendChild(txt(cx, cy - block / 2 + fN * 0.5, fN, "#0f3d8a", esc(b.number)));
-          labelG.appendChild(txt(cx, cy + block / 2 - fD * 0.5, fD, "#5f6368", dim));
+          labelG.appendChild(txt(cx, cy - block / 2 + fN / 2, fN, "#0f3d8a", esc(b.number)));
+          labelG.appendChild(txt(cx, cy + block / 2 - fD / 2, fD, "#5f6368", dim));
         } else {
           labelG.appendChild(txt(cx, cy, fN, "#0f3d8a", esc(b.number)));
         }
