@@ -38,8 +38,12 @@ export function BoothInfoPanel({
   const currentStatusId = assignment?.statusId ?? null;
 
   // Split-a-booth-in-half (adaptability when a booth is subdivided/relabelled).
+  // Hidden for now — flip ENABLE_BOOTH_SPLIT to re-expose the "Split booth in half"
+  // action. Existing split parts still show "Merge halves back" so none get stranded.
+  const ENABLE_BOOTH_SPLIT = false;
   const isSplitPart = !!booth.splitSource;
-  const canSplit = !!booth.number && !!booth.polygon?.length && booth.kind !== "split";
+  const canSplit =
+    ENABLE_BOOTH_SPLIT && !!booth.number && !!booth.polygon?.length && booth.kind !== "split";
   const [splitting, setSplitting] = useState(false);
   const [numA, setNumA] = useState("");
   const [numB, setNumB] = useState("");
