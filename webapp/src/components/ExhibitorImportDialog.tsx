@@ -33,10 +33,7 @@ export function ExhibitorImportDialog({
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
       <div className="card w-full max-w-lg p-6 max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-medium mb-1">Import exhibitors</h2>
-        <p className="text-sm text-[color:var(--color-ink-soft)] mb-4">
-          Assign exhibitor names to booths in bulk. Names are matched to booths by number.
-        </p>
+        <h2 className="text-lg font-medium mb-4">Import exhibitors</h2>
 
         <div className="flex rounded-md border border-[color:var(--color-line)] overflow-hidden text-sm mb-5 w-fit">
           {([["paste", "Paste / upload"], ["copy", "Copy from a map"]] as const).map(([v, label]) => (
@@ -252,10 +249,6 @@ function CopyTab({ mapId, levelId, onClose }: { mapId: string; levelId: string; 
         />
         Also copy status types and each booth’s status
       </label>
-      <p className="text-xs text-[color:var(--color-ink-soft)] leading-relaxed">
-        Matching is by booth number. Existing names on booths not in the source are kept.
-        {includeStatuses && " The source map’s status types are copied so colours line up."}
-      </p>
 
       <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-[color:var(--color-line)]">
         <button onClick={onClose} disabled={busy} className="btn btn-ghost">
