@@ -2,16 +2,31 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { MapDoc } from "@/lib/maps";
+import { duplicateMap, type MapDoc } from "@/lib/maps";
+import { useAuth } from "@/lib/auth";
 import { Avatar } from "./Avatar";
 
 /* A map shown as a card in the dashboard grid — thumbnail-ish header + metadata row,
-   with a hover kebab menu for actions (delete). */
+   with a hover kebab menu for actions (duplicate, delete). */
 export function MapCard({ map, onRequestDelete }: { map: MapDoc; onRequestDelete: (m: MapDoc) => void }) {
+  const { identity } = useAuth();
   const when = map.updatedAt?.toDate?.();
   const ago = when ? relTime(when) : "";
   const [menu, setMenu] = useState(false);
+  const [dup, setDup] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  const duplicate = async () => {
+    if (!identity) return;
+    setDup(true);
+    try {
+      await duplicateMap(identity, map);
+    } catch (e) {
+      alert("Couldn’t duplicate: " + (e instanceof Error ? e.message : e));
+    } finally {
+      setDup(false);
+    }
+  };
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -78,6 +93,19 @@ export function MapCard({ map, onRequestDelete }: { map: MapDoc; onRequestDelete
             <button
               onClick={() => {
                 setMenu(false);
+                duplicate();
+              }}
+              className="w-full text-left text-sm px-3 py-2 rounded-md hover:bg-[#f1f3f4] flex items-center gap-2"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="11" height="11" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Duplicate
+            </button>
+            <button
+              onClick={() => {
+                setMenu(false);
                 onRequestDelete(map);
               }}
               className="w-full text-left text-sm px-3 py-2 rounded-md hover:bg-[#fce8e6] text-[#c5221f] flex items-center gap-2"
@@ -91,6 +119,15 @@ export function MapCard({ map, onRequestDelete }: { map: MapDoc; onRequestDelete
           </div>
         )}
       </div>
+
+      {dup && (
+        <div className="absolute inset-0 z-20 grid place-items-center rounded-lg bg-[color:var(--color-surface)]/70 text-xs text-[color:var(--color-ink-soft)]">
+          <span className="flex items-center gap-2">
+            <span className="h-3.5 w-3.5 rounded-full border-2 border-[color:var(--color-line)] border-t-[color:var(--color-accent)] animate-spin" />
+            Duplicating…
+          </span>
+        </div>
+      )}
     </div>
   );
 }

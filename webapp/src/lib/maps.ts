@@ -581,13 +581,17 @@ export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
 }
 
 /** Rebuild a map from a backup JSON. Creates a fresh map doc + all levels/renders/data. */
-export async function restoreMap(user: Identity, backup: MapBackup): Promise<string> {
+export async function restoreMap(
+  user: Identity,
+  backup: MapBackup,
+  titleOverride?: string,
+): Promise<string> {
   if (!backup || backup.version !== 1 || !Array.isArray(backup.levels)) {
     throw new Error("Not a valid map backup file.");
   }
   const first = backup.levels[0];
   const mapRef = await addDoc(mapsCol, {
-    title: backup.title ? `${backup.title} (restored)` : "Restored map",
+    title: titleOverride ?? (backup.title ? `${backup.title} (restored)` : "Restored map"),
     ownerId: user.uid,
     ownerName: user.name,
     ownerPhoto: user.photo,
@@ -635,6 +639,13 @@ export async function restoreMap(user: Identity, backup: MapBackup): Promise<str
     }
   }
   return mapId;
+}
+
+/** Duplicate a map: a full deep copy (all levels, renders, assignments, statuses,
+ *  splits) into a new "<title> (copy)" map. Returns the new map id. */
+export async function duplicateMap(user: Identity, map: MapDoc): Promise<string> {
+  const backup = await getMapBackup(map);
+  return restoreMap(user, backup, `${map.title} (copy)`);
 }
 
 /** Remove a level (its render + assignments). Refuses to remove the last level. */
