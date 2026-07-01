@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { StatusType } from "@/lib/maps";
+
+const MENU_W = 224; // px (w-56)
 
 /**
  * Google-Docs-style checklist filter for search: every status is individually
@@ -18,7 +20,17 @@ export function StatusFilterMenu({
   onChange: (next: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const sel = useMemo(() => new Set(selected), [selected]);
+
+  // Position the menu with fixed coords from the button, so it isn't clipped by the
+  // search panel's overflow.
+  const openMenu = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, left: Math.max(8, r.right - MENU_W) });
+    setOpen(true);
+  };
 
   const toggleStatus = (id: string) => {
     const next = new Set(sel);
@@ -43,7 +55,8 @@ export function StatusFilterMenu({
   return (
     <div className="relative shrink-0">
       <button
-        onClick={() => setOpen((o) => !o)}
+        ref={btnRef}
+        onClick={() => (open ? setOpen(false) : openMenu())}
         aria-label="Filter by status"
         className={`h-7 pl-1.5 pr-1 rounded-md border flex items-center gap-1 text-xs ${
           active
@@ -60,10 +73,13 @@ export function StatusFilterMenu({
         </svg>
       </button>
 
-      {open && (
+      {open && pos && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 z-40 w-56 card p-1 max-h-[18rem] overflow-auto">
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            style={{ top: pos.top, left: pos.left, width: MENU_W }}
+            className="fixed z-50 card p-1 max-h-[18rem] overflow-auto"
+          >
             <div className="flex items-center justify-between px-2 py-1">
               <span className="text-[11px] font-medium text-[color:var(--color-ink-soft)] uppercase tracking-wide">
                 Filter by status
