@@ -5,11 +5,10 @@ import type { Booth } from "./PanZoom";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
 
 /**
- * Floating search panel for the viewer. Finds booths by booth number or exhibitor
- * name (case-insensitive substring), and shows the matches two ways:
- *  - "List"  → a scrollable result list; click a row to zoom to that booth.
- *  - "Map"   → frames all matches on the floorplan (matches are always ringed).
- * Matches are reported up to the viewer (`onResults`) so PanZoom rings them.
+ * Floating search panel for the viewer. Finds booths by booth number / exhibitor name
+ * and/or by a chosen status (the filter select at the end of the bar). Matches are
+ * reported up to the viewer (`onResults`) so PanZoom highlights them; the "map" view
+ * frames them all.
  */
 export function SearchPanel({
   booths,
@@ -17,8 +16,10 @@ export function SearchPanel({
   statusTypes,
   query,
   view,
+  statusFilter,
   onQueryChange,
   onViewChange,
+  onStatusFilterChange,
   onResults,
   onPick,
   onFrameAll,
@@ -27,10 +28,12 @@ export function SearchPanel({
   booths: Booth[];
   assignments: Record<string, BoothAssignment>;
   statusTypes: StatusType[];
-  query: string; // controlled + synced across collaborators
+  query: string;
   view: "list" | "map";
+  statusFilter: string | null;
   onQueryChange: (q: string) => void;
   onViewChange: (v: "list" | "map") => void;
+  onStatusFilterChange: (s: string | null) => void;
   onResults: (indices: number[]) => void;
   onPick: (index: number) => void;
   onFrameAll: (indices: number[]) => void;
@@ -38,8 +41,10 @@ export function SearchPanel({
 }) {
   const q = query;
   const inputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => inputRef.current?.focus(), []);
+
+  const hasStatuses = statusTypes.some((t) => t.statuses.length > 0);
+  const searching = q.trim() !== "" || !!statusFilter;
 
   // statusId -> {name, color}
   const statusInfo = useMemo(() => {
@@ -48,36 +53,36 @@ export function SearchPanel({
     return m;
   }, [statusTypes]);
 
-  // Matches: index into booths[]. Empty query = no matches (nothing highlighted).
+  // Matches: booth text (number/exhibitor) AND the status filter, when either is set.
   const matches = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return [] as number[];
+    if (!term && !statusFilter) return [] as number[];
     const out: number[] = [];
     booths.forEach((b, i) => {
       const num = (b.number ?? "").toLowerCase();
       const name = (b.number ? assignments[b.number]?.exhibitor : "")?.toLowerCase() ?? "";
-      if (num.includes(term) || name.includes(term)) out.push(i);
+      const textOk = !term || num.includes(term) || name.includes(term);
+      const statusOk = !statusFilter || (!!b.number && assignments[b.number]?.statusId === statusFilter);
+      if (textOk && statusOk) out.push(i);
     });
-    // Sort: exhibitor-name matches first, then by booth number naturally.
     return out.sort((a, b) => {
       const na = booths[a].number ?? "";
       const nb = booths[b].number ?? "";
       return na.localeCompare(nb, undefined, { numeric: true });
     });
-  }, [q, booths, assignments]);
+  }, [q, statusFilter, booths, assignments]);
 
-  // Report matches up so the map rings them; frame them when in map view.
+  // Report matches up so the map highlights them; frame them when in map view.
   useEffect(() => {
     onResults(matches);
     if (view === "map" && matches.length) onFrameAll(matches);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matches, view]);
 
-  // Clear the highlight when the panel unmounts.
   useEffect(() => () => onResults([]), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="absolute top-4 left-4 z-20 w-80 card overflow-hidden flex flex-col max-h-[calc(100vh-7rem)]">
+    <div className="absolute top-4 left-4 z-20 w-96 card overflow-hidden flex flex-col max-h-[calc(100vh-7rem)]">
       <div className="p-2.5 border-b border-[color:var(--color-line)]">
         <div className="flex items-center gap-2">
           <svg className="shrink-0 text-[color:var(--color-ink-soft)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -93,19 +98,42 @@ export function SearchPanel({
               if (e.key === "Enter" && matches.length) onPick(matches[0]);
             }}
             placeholder="Search exhibitor or booth #"
-            className="flex-1 text-sm outline-none bg-transparent"
+            className="flex-1 min-w-0 text-sm outline-none bg-transparent"
           />
+          {hasStatuses && (
+            <select
+              value={statusFilter ?? ""}
+              onChange={(e) => onStatusFilterChange(e.target.value || null)}
+              title="Filter by status"
+              className={`shrink-0 max-w-[8rem] text-xs rounded-md border px-1.5 py-1 outline-none cursor-pointer bg-transparent ${
+                statusFilter
+                  ? "border-[color:var(--color-accent)] text-[color:var(--color-accent)]"
+                  : "border-[color:var(--color-line)] text-[color:var(--color-ink-soft)]"
+              }`}
+            >
+              <option value="">Any status</option>
+              {statusTypes.map((t) => (
+                <optgroup key={t.id} label={t.name}>
+                  {t.statuses.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          )}
           <button
             onClick={onClose}
             aria-label="Close search"
-            className="h-6 w-6 grid place-items-center rounded-full hover:bg-[#f1f3f4] text-[color:var(--color-ink-soft)]"
+            className="shrink-0 h-6 w-6 grid place-items-center rounded-full hover:bg-[#f1f3f4] text-[color:var(--color-ink-soft)]"
           >
             ×
           </button>
         </div>
       </div>
 
-      {q.trim() && (
+      {searching && (
         <div className="flex items-center justify-between px-3 py-2 border-b border-[color:var(--color-line)]">
           <span className="text-xs text-[color:var(--color-ink-soft)]">
             {matches.length} {matches.length === 1 ? "result" : "results"}
@@ -128,11 +156,11 @@ export function SearchPanel({
         </div>
       )}
 
-      {q.trim() && view === "list" && (
+      {searching && view === "list" && (
         <div className="overflow-auto">
           {matches.length === 0 ? (
             <div className="px-3 py-6 text-sm text-[color:var(--color-ink-soft)] text-center">
-              No booths match “{q.trim()}”.
+              No booths match.
             </div>
           ) : (
             <ul className="divide-y divide-[color:var(--color-line)]">
@@ -178,11 +206,11 @@ export function SearchPanel({
         </div>
       )}
 
-      {q.trim() && view === "map" && (
+      {searching && view === "map" && (
         <div className="px-3 py-3 text-xs text-[color:var(--color-ink-soft)] leading-relaxed">
           {matches.length
             ? `Highlighted ${matches.length} ${matches.length === 1 ? "booth" : "booths"} on the map.`
-            : `No booths match “${q.trim()}”.`}
+            : "No booths match."}
           {matches.length > 0 && (
             <button
               onClick={() => onFrameAll(matches)}

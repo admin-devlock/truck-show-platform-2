@@ -301,13 +301,25 @@ export async function setActiveStatusType(id: string, activeStatusTypeId: string
 // level — stays per-user; matches are computed locally by each viewer for its level.)
 // `by` is the uid of the last writer, so a client ignores the echo of its own writes.
 // ---------------------------------------------------------------------------
-export type SearchState = { query: string; active: boolean; view: "list" | "map"; by: string };
+export type SearchState = {
+  query: string;
+  active: boolean;
+  view: "list" | "map";
+  statusFilter: string | null; // a statusId to filter results by, or null for any
+  by: string;
+};
 const searchDoc = (id: string) => doc(db, "maps", id, "meta", "search");
 
 export function subscribeSearch(id: string, cb: (s: SearchState) => void) {
   return onSnapshot(searchDoc(id), (snap) => {
     const d = (snap.data() as Partial<SearchState>) || {};
-    cb({ query: d.query ?? "", active: d.active ?? false, view: d.view ?? "list", by: d.by ?? "" });
+    cb({
+      query: d.query ?? "",
+      active: d.active ?? false,
+      view: d.view ?? "list",
+      statusFilter: d.statusFilter ?? null,
+      by: d.by ?? "",
+    });
   });
 }
 

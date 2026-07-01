@@ -67,6 +67,7 @@ function Viewer({ id }: { id: string }) {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchView, setSearchView] = useState<"list" | "map">("list");
+  const [searchStatusFilter, setSearchStatusFilter] = useState<string | null>(null);
   const searchWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panzoomRef = useRef<PanZoomHandle>(null);
   const others = usePresence(id, identity);
@@ -78,12 +79,16 @@ function Viewer({ id }: { id: string }) {
       setShowSearch(s.active);
       setSearchView(s.view);
       setSearchQuery(s.query);
+      setSearchStatusFilter(s.statusFilter);
       if (!s.active) setSearchMatches(null);
     });
   }, [id, identity?.uid]);
 
   // Push a search change to all collaborators (query writes are debounced).
-  const pushSearch = (patch: { query?: string; active?: boolean; view?: "list" | "map" }, debounce = false) => {
+  const pushSearch = (
+    patch: { query?: string; active?: boolean; view?: "list" | "map"; statusFilter?: string | null },
+    debounce = false,
+  ) => {
     if (!identity) return;
     if (searchWriteTimer.current) clearTimeout(searchWriteTimer.current);
     if (debounce) {
@@ -99,6 +104,10 @@ function Viewer({ id }: { id: string }) {
   const onSearchView = (v: "list" | "map") => {
     setSearchView(v);
     pushSearch({ view: v });
+  };
+  const onSearchStatusFilter = (statusFilter: string | null) => {
+    setSearchStatusFilter(statusFilter);
+    pushSearch({ statusFilter });
   };
   const toggleSearch = () => {
     const next = !showSearch;
@@ -282,7 +291,7 @@ function Viewer({ id }: { id: string }) {
             onSelect={setSelected}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
-            activeStatusTypeId={boothData.activeStatusTypeId}
+            activeStatusTypeId={showSearch ? null : boothData.activeStatusTypeId}
             highlight={searchMatches}
             cursors={cursors}
             onCursorMove={onCursorMove}
@@ -298,7 +307,7 @@ function Viewer({ id }: { id: string }) {
             onSelect={setSelected}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
-            activeStatusTypeId={boothData.activeStatusTypeId}
+            activeStatusTypeId={showSearch ? null : boothData.activeStatusTypeId}
             highlight={searchMatches}
             cursors={cursors}
             onCursorMove={onCursorMove}
@@ -319,7 +328,7 @@ function Viewer({ id }: { id: string }) {
             onClose={() => setSelected(null)}
           />
         )}
-        {activeStatusType && booths && booths.length > 0 && (
+        {!showSearch && activeStatusType && booths && booths.length > 0 && (
           <StatusLegend
             type={activeStatusType}
             booths={booths}
@@ -334,8 +343,10 @@ function Viewer({ id }: { id: string }) {
             statusTypes={boothData.statusTypes}
             query={searchQuery}
             view={searchView}
+            statusFilter={searchStatusFilter}
             onQueryChange={onSearchQuery}
             onViewChange={onSearchView}
+            onStatusFilterChange={onSearchStatusFilter}
             onResults={(idx) => setSearchMatches(idx.length ? new Set(idx) : null)}
             onPick={(i) => {
               setSelected(i);
@@ -367,7 +378,7 @@ function Viewer({ id }: { id: string }) {
           <StatusManager
             mapId={id}
             statusTypes={boothData.statusTypes}
-            activeStatusTypeId={boothData.activeStatusTypeId}
+            activeStatusTypeId={showSearch ? null : boothData.activeStatusTypeId}
             onClose={() => setShowStatuses(false)}
           />
         )}
