@@ -69,14 +69,21 @@ function Viewer({ id }: { id: string }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchView, setSearchView] = useState<"list" | "map">("list");
   const [searchStatusFilter, setSearchStatusFilter] = useState<string[]>([]);
+  type SearchPatch = { query?: string; active?: boolean; view?: "list" | "map"; statusFilter?: string[] };
   const searchWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSearch = useRef<SearchPatch>({});
+  const firstSearchSnapshot = useRef(true);
   const panzoomRef = useRef<PanZoomHandle>(null);
   const others = usePresence(id, identity);
 
-  // Live-sync the shared search state. Ignore the echo of our own writes (by === us).
+  // Live-sync the shared search state. Always apply the FIRST snapshot (so a returning
+  // user — even if they were the last writer — gets the shared state restored), then
+  // ignore the echo of our own subsequent writes so we don't clobber local typing.
   useEffect(() => {
+    firstSearchSnapshot.current = true;
     return subscribeSearch(id, (s) => {
-      if (s.by && s.by === identity?.uid) return;
+      if (!firstSearchSnapshot.current && s.by && s.by === identity?.uid) return;
+      firstSearchSnapshot.current = false;
       setShowSearch(s.active);
       setSearchView(s.view);
       setSearchQuery(s.query);
@@ -85,17 +92,26 @@ function Viewer({ id }: { id: string }) {
     });
   }, [id, identity?.uid]);
 
-  // Push a search change to all collaborators (query writes are debounced).
-  const pushSearch = (
-    patch: { query?: string; active?: boolean; view?: "list" | "map"; statusFilter?: string[] },
-    debounce = false,
-  ) => {
+  // Push a search change to all collaborators. Changes accumulate into one pending patch
+  // so an immediate write (view/filter/toggle) never drops a still-debounced query write —
+  // and a pending query's `active:true` can't resurrect a search the user just closed.
+  const flushSearch = () => {
+    if (searchWriteTimer.current) {
+      clearTimeout(searchWriteTimer.current);
+      searchWriteTimer.current = null;
+    }
+    const patch = pendingSearch.current;
+    pendingSearch.current = {};
+    if (identity && Object.keys(patch).length) setSearchState(id, identity.uid, patch);
+  };
+  const pushSearch = (patch: SearchPatch, debounce = false) => {
     if (!identity) return;
-    if (searchWriteTimer.current) clearTimeout(searchWriteTimer.current);
+    pendingSearch.current = { ...pendingSearch.current, ...patch };
     if (debounce) {
-      searchWriteTimer.current = setTimeout(() => setSearchState(id, identity.uid, patch), 200);
+      if (searchWriteTimer.current) clearTimeout(searchWriteTimer.current);
+      searchWriteTimer.current = setTimeout(flushSearch, 200);
     } else {
-      setSearchState(id, identity.uid, patch);
+      flushSearch();
     }
   };
   const onSearchQuery = (q: string) => {
@@ -174,6 +190,7 @@ function Viewer({ id }: { id: string }) {
     setRender(null);
     setRenderLevel(null);
     setSelected(null);
+    setSearchMatches(null); // match indices are per-level; SearchPanel recomputes for the new one
     const lvl = activeLevel.id;
     return subscribeRender(id, lvl, (r) => {
       setRender(r);

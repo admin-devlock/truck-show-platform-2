@@ -13,6 +13,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -111,18 +112,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Effective identity: guest persona wins; otherwise a non-anonymous (Google) user.
-  let identity: Identity | null = null;
-  if (guest) {
-    identity = guest;
-  } else if (user && !user.isAnonymous) {
-    identity = {
-      uid: user.uid,
-      name: user.displayName ?? "Anonymous",
-      photo: user.photoURL ?? null,
-      color: colorForUid(user.uid),
-      isGuest: false,
-    };
-  }
+  // Memoised so its reference is stable across unrelated re-renders — consumers key
+  // effects on it (e.g. usePresence), and a fresh object each render would needlessly
+  // tear down + recreate the presence doc, flickering the user's avatar for others.
+  const identity = useMemo<Identity | null>(() => {
+    if (guest) return guest;
+    if (user && !user.isAnonymous) {
+      return {
+        uid: user.uid,
+        name: user.displayName ?? "Anonymous",
+        photo: user.photoURL ?? null,
+        color: colorForUid(user.uid),
+        isGuest: false,
+      };
+    }
+    return null;
+  }, [guest, user]);
 
   return (
     <AuthContext.Provider
