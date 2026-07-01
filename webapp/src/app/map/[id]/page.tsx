@@ -364,7 +364,12 @@ function Viewer({ id }: { id: string }) {
           />
         )}
         {showStatuses && (
-          <StatusManager mapId={id} statusTypes={boothData.statusTypes} onClose={() => setShowStatuses(false)} />
+          <StatusManager
+            mapId={id}
+            statusTypes={boothData.statusTypes}
+            activeStatusTypeId={boothData.activeStatusTypeId}
+            onClose={() => setShowStatuses(false)}
+          />
         )}
         {map && activeLevel?.status === "processing" && (
           <Centered>

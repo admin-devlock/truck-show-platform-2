@@ -140,8 +140,8 @@ export const PanZoom = forwardRef<PanZoomHandle, {
     (statusTypes ?? []).forEach((t) => t.statuses.forEach((s) => m.set(s.id, s.color)));
     return m;
   }, [statusTypes]);
-  // When a status type is the active highlight lens, only colour booths whose status
-  // belongs to it (others stay uncoloured). No active lens = colour every status.
+  // Status colours are shown only for the SELECTED status type (one at a time). With
+  // none selected, no status colours are drawn.
   const activeStatusIds = useMemo(() => {
     if (!activeStatusTypeId) return null;
     const t = (statusTypes ?? []).find((t) => t.id === activeStatusTypeId);
@@ -326,11 +326,9 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       const [cx, cy] = b.centroid;
       const a = b.number ? assignments?.[b.number] : undefined;
 
-      // status fill (respecting the active highlight lens, if any)
+      // status fill — only for the selected status type (none selected = no fills)
       const col =
-        a?.statusId && (!activeStatusIds || activeStatusIds.has(a.statusId))
-          ? statusColor.get(a.statusId)
-          : undefined;
+        a?.statusId && activeStatusIds?.has(a.statusId) ? statusColor.get(a.statusId) : undefined;
       if (col) {
         const poly = document.createElementNS(NS, "polygon");
         poly.setAttribute("points", b.polygon.map((p) => p.join(",")).join(" "));

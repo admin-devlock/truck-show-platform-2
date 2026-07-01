@@ -20,15 +20,19 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 export function StatusManager({
   mapId,
   statusTypes,
+  activeStatusTypeId,
   onClose,
 }: {
   mapId: string;
   statusTypes: StatusType[];
+  activeStatusTypeId: string | null;
   onClose: () => void;
 }) {
   const [types, setTypes] = useState<StatusType[]>(() =>
     JSON.parse(JSON.stringify(statusTypes)),
   );
+  // Which status type's colours are shown on the map — one at a time (or none).
+  const [shownId, setShownId] = useState<string | null>(activeStatusTypeId);
   const [busy, setBusy] = useState(false);
 
   // Copy-from-another-map picker.
@@ -42,7 +46,10 @@ export function StatusManager({
 
   const addType = () =>
     update([...types, { id: uid(), name: "New status type", statuses: [] }]);
-  const removeType = (ti: number) => update(types.filter((_, i) => i !== ti));
+  const removeType = (ti: number) => {
+    if (types[ti].id === shownId) setShownId(null);
+    update(types.filter((_, i) => i !== ti));
+  };
   const renameType = (ti: number, name: string) =>
     update(types.map((t, i) => (i === ti ? { ...t, name } : t)));
 
@@ -103,6 +110,10 @@ export function StatusManager({
     setBusy(true);
     try {
       await saveStatusTypes(mapId, types);
+      // Persist which type's colours are shown (one at a time). Guard against a shown
+      // type that was removed during editing.
+      const validShown = types.some((t) => t.id === shownId) ? shownId : null;
+      await setActiveStatusType(mapId, validShown);
       onClose();
     } catch (e) {
       setBusy(false);
@@ -110,19 +121,8 @@ export function StatusManager({
     }
   };
 
-  // Save the current edits and make this the map's active highlight lens, then close
-  // so the booths colour by this status type.
-  const highlight = async (t: StatusType) => {
-    setBusy(true);
-    try {
-      await saveStatusTypes(mapId, types);
-      await setActiveStatusType(mapId, t.id);
-      onClose();
-    } catch (e) {
-      setBusy(false);
-      alert("Couldn’t highlight: " + e);
-    }
-  };
+  // Single-select: showing one type's colours unselects any other.
+  const toggleShown = (id: string) => setShownId((cur) => (cur === id ? null : id));
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
@@ -155,16 +155,21 @@ export function StatusManager({
                   className="flex-1 font-medium text-sm border-b border-transparent hover:border-[color:var(--color-line)] focus:border-[color:var(--color-accent)] outline-none py-1"
                 />
                 <button
-                  onClick={() => highlight(t)}
-                  disabled={busy || t.statuses.length === 0}
-                  title="Colour the booths on the map by this status type"
-                  className="text-xs text-[color:var(--color-accent)] hover:underline disabled:opacity-40 disabled:no-underline flex items-center gap-1"
+                  onClick={() => toggleShown(t.id)}
+                  disabled={t.statuses.length === 0}
+                  aria-pressed={shownId === t.id}
+                  title="Show this status type’s colours on the map (one type at a time)"
+                  className={`text-xs px-2 py-1 rounded-md border flex items-center gap-1 disabled:opacity-40 ${
+                    shownId === t.id
+                      ? "bg-[color:var(--color-accent)] text-white border-[color:var(--color-accent)]"
+                      : "text-[color:var(--color-ink-soft)] border-[color:var(--color-line)] hover:bg-[#f1f3f4]"
+                  }`}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
                     <circle cx="12" cy="12" r="3" />
-                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
                   </svg>
-                  Highlight on map
+                  {shownId === t.id ? "Shown on map" : "Show on map"}
                 </button>
                 <button
                   onClick={() => removeType(ti)}
