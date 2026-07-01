@@ -5,9 +5,7 @@ import {
   importExhibitors,
   copyAssignmentsFromMap,
   subscribeMaps,
-  getLevelsOnce,
   type MapDoc,
-  type Level,
   type BoothAssignment,
 } from "@/lib/maps";
 import { ConfirmDialog, OverwriteGlyph } from "./ConfirmDialog";
@@ -20,13 +18,11 @@ import { ConfirmDialog, OverwriteGlyph } from "./ConfirmDialog";
  */
 export function ExhibitorImportDialog({
   mapId,
-  levelId,
   boothNumbers,
   assignments,
   onClose,
 }: {
   mapId: string;
-  levelId: string;
   boothNumbers: string[];
   assignments: Record<string, BoothAssignment>;
   onClose: () => void;
@@ -56,9 +52,9 @@ export function ExhibitorImportDialog({
         </div>
 
         {tab === "paste" ? (
-          <PasteTab mapId={mapId} levelId={levelId} numberSet={numberSet} assignments={assignments} onClose={onClose} />
+          <PasteTab mapId={mapId} numberSet={numberSet} assignments={assignments} onClose={onClose} />
         ) : (
-          <CopyTab mapId={mapId} levelId={levelId} assignments={assignments} onClose={onClose} />
+          <CopyTab mapId={mapId} assignments={assignments} onClose={onClose} />
         )}
       </div>
     </div>
@@ -87,13 +83,11 @@ function parseRows(text: string): Record<string, string> {
 
 function PasteTab({
   mapId,
-  levelId,
   numberSet,
   assignments,
   onClose,
 }: {
   mapId: string;
-  levelId: string;
   numberSet: Set<string>;
   assignments: Record<string, BoothAssignment>;
   onClose: () => void;
@@ -116,7 +110,7 @@ function PasteTab({
   const doImport = async () => {
     setBusy(true);
     try {
-      await importExhibitors(mapId, levelId, parsed);
+      await importExhibitors(mapId, parsed);
       onClose();
     } catch (e) {
       setBusy(false);
@@ -189,7 +183,7 @@ function PasteTab({
           busyLabel="Importing…"
           icon={<OverwriteGlyph />}
           onConfirm={async () => {
-            await importExhibitors(mapId, levelId, parsed);
+            await importExhibitors(mapId, parsed);
             onClose();
           }}
           onClose={() => setConfirm(false)}
@@ -201,46 +195,25 @@ function PasteTab({
 
 function CopyTab({
   mapId,
-  levelId,
   assignments,
   onClose,
 }: {
   mapId: string;
-  levelId: string;
   assignments: Record<string, BoothAssignment>;
   onClose: () => void;
 }) {
   const [maps, setMaps] = useState<MapDoc[]>([]);
   const [sourceId, setSourceId] = useState("");
-  const [sourceLevels, setSourceLevels] = useState<Level[]>([]);
-  const [sourceLevelId, setSourceLevelId] = useState("");
   const [includeStatuses, setIncludeStatuses] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
 
   useEffect(() => subscribeMaps((m) => setMaps(m.filter((x) => x.id !== mapId))), [mapId]);
 
-  // Load the chosen source map's levels so the user can pick which one to copy from.
-  useEffect(() => {
-    setSourceLevels([]);
-    setSourceLevelId("");
-    const m = maps.find((x) => x.id === sourceId);
-    if (!m) return;
-    let alive = true;
-    getLevelsOnce(m).then((lv) => {
-      if (!alive) return;
-      setSourceLevels(lv);
-      setSourceLevelId(lv[0]?.id ?? "");
-    });
-    return () => {
-      alive = false;
-    };
-  }, [sourceId, maps]);
-
   const existingNames = Object.values(assignments).filter((a) => a.exhibitor?.trim()).length;
 
   const runCopy = async () => {
-    const n = await copyAssignmentsFromMap(mapId, levelId, sourceId, sourceLevelId, includeStatuses);
+    const n = await copyAssignmentsFromMap(mapId, sourceId, includeStatuses);
     onClose();
     setTimeout(() => alert(`Copied ${n} assignment${n === 1 ? "" : "s"}.`), 0);
   };
@@ -255,7 +228,7 @@ function CopyTab({
   };
   // Confirm when copying could overwrite existing names or replace the status types.
   const copy = () => {
-    if (!sourceId || !sourceLevelId) return;
+    if (!sourceId) return;
     if (existingNames > 0 || includeStatuses) setConfirm(true);
     else doCopy();
   };
@@ -278,25 +251,6 @@ function CopyTab({
         ))}
       </select>
 
-      {sourceLevels.length > 1 && (
-        <>
-          <label className="block text-xs font-medium text-[color:var(--color-ink-soft)] mb-1">
-            From level
-          </label>
-          <select
-            value={sourceLevelId}
-            onChange={(e) => setSourceLevelId(e.target.value)}
-            className="w-full border border-[color:var(--color-line)] rounded-md px-3 py-2 text-sm mb-4 outline-none focus:border-[color:var(--color-accent)] bg-white"
-          >
-            {sourceLevels.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </>
-      )}
-
       <label className="flex items-center gap-2 text-sm mb-2 cursor-pointer">
         <input
           type="checkbox"
@@ -310,7 +264,7 @@ function CopyTab({
         <button onClick={onClose} disabled={busy} className="btn btn-ghost">
           Cancel
         </button>
-        <button onClick={copy} disabled={busy || !sourceId || !sourceLevelId} className="btn btn-primary disabled:opacity-50">
+        <button onClick={copy} disabled={busy || !sourceId} className="btn btn-primary disabled:opacity-50">
           {busy ? "Copying…" : "Copy"}
         </button>
       </div>

@@ -16,14 +16,12 @@ import { splitPolygon, polygonArea, centroid, bbox, type Pt } from "@/lib/geomet
 /* Slide-in panel: selected booth details + editable exhibitor name and status. */
 export function BoothInfoPanel({
   mapId,
-  levelId,
   booth,
   assignment,
   statusTypes,
   onClose,
 }: {
   mapId: string;
-  levelId: string;
   booth: Booth;
   assignment: BoothAssignment | undefined;
   statusTypes: StatusType[];
@@ -75,23 +73,23 @@ export function BoothInfoPanel({
     });
     const a = (numA.trim() || `${booth.number}A`);
     const b = (numB.trim() || `${booth.number}B`);
-    await splitBooth(mapId, levelId, booth.number, [mk(pa, a), mk(pb, b)], assignment);
+    await splitBooth(mapId, booth.number, [mk(pa, a), mk(pb, b)], assignment);
     onClose();
   };
   const doMerge = async () => {
     if (booth.splitSource) {
-      await unsplitBooth(mapId, levelId, booth.splitSource);
+      await unsplitBooth(mapId, booth.splitSource);
       onClose();
     }
   };
 
   const saveName = () => {
     if (canAssign && name !== (assignment?.exhibitor ?? "")) {
-      setBoothExhibitor(mapId, levelId, booth.number!, name.trim());
+      setBoothExhibitor(mapId, booth.number!, name.trim());
     }
   };
   const pickStatus = (id: string | null) => {
-    if (canAssign) setBoothStatus(mapId, levelId, booth.number!, currentStatusId === id ? null : id);
+    if (canAssign) setBoothStatus(mapId, booth.number!, currentStatusId === id ? null : id);
   };
 
   return (

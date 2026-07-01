@@ -92,7 +92,7 @@ export function StatusManager({
     setCopyBusy(true);
     setCopyNote(null);
     try {
-      const { statusTypes: src } = await getBoothDataOnce(sourceId, "main");
+      const { statusTypes: src } = await getBoothDataOnce(sourceId);
       const have = new Set(types.map((t) => t.name.trim().toLowerCase()));
       const incoming = src.filter((t) => !have.has(t.name.trim().toLowerCase()));
       if (incoming.length) update([...types, ...JSON.parse(JSON.stringify(incoming))]);
@@ -298,7 +298,7 @@ export function StatusManager({
         message={
           <>
             {confirm.names.join(", ")} {confirm.names.length === 1 ? "is" : "are"} used by{" "}
-            {confirm.count} booth{confirm.count === 1 ? "" : "s"} on this level. Removing{" "}
+            {confirm.count} booth{confirm.count === 1 ? "" : "s"} across the map. Removing{" "}
             {confirm.names.length === 1 ? "it" : "them"} clears those booths’ status — this can’t
             be undone.
           </>

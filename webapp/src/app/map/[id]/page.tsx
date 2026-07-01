@@ -7,7 +7,7 @@ import { TopBar } from "@/components/TopBar";
 import { PanZoom, type Booth, type PanZoomHandle, type RemoteCursor } from "@/components/PanZoom";
 import { BoothInfoPanel } from "@/components/BoothInfoPanel";
 import { StatusManager } from "@/components/StatusManager";
-import { SearchPanel } from "@/components/SearchPanel";
+import { SearchPanel, type SearchBooth } from "@/components/SearchPanel";
 import { StatusLegend } from "@/components/StatusLegend";
 import { ExhibitorImportDialog } from "@/components/ExhibitorImportDialog";
 import { ExportDialog } from "@/components/ExportDialog";
@@ -23,6 +23,7 @@ import {
   subscribeSearch,
   setSearchState,
   setActiveStatusType,
+  getRenderBooths,
   renameMap,
   type MapDoc,
   type MapRender,
@@ -165,16 +166,22 @@ function Viewer({ id }: { id: string }) {
   }, [others, activeLevel?.id]);
 
   // The active level's rendered SVG + its assignments/statuses (collaborative, live).
+  // `renderLevel` records which level `render` (and thus `booths`) currently belongs to,
+  // so cross-level focus can tell freshly-loaded target booths from stale old-level ones.
+  const [renderLevel, setRenderLevel] = useState<string | null>(null);
   useEffect(() => {
     if (!activeLevel) return;
     setRender(null);
+    setRenderLevel(null);
     setSelected(null);
-    return subscribeRender(id, activeLevel.id, setRender);
+    const lvl = activeLevel.id;
+    return subscribeRender(id, lvl, (r) => {
+      setRender(r);
+      setRenderLevel(lvl);
+    });
   }, [id, activeLevel?.id]);
-  useEffect(() => {
-    if (!activeLevel) return;
-    return subscribeBoothData(id, activeLevel.id, setBoothData);
-  }, [id, activeLevel?.id]);
+  // Map-wide assignments + statuses (shared across all levels).
+  useEffect(() => subscribeBoothData(id, setBoothData), [id]);
 
   // Booth data for click-to-inspect: uploaded levels carry it in the render subdoc;
   // the bundled sample has a sibling JSON next to its SVG.
@@ -212,10 +219,53 @@ function Viewer({ id }: { id: string }) {
   const activeStatusType = boothData.activeStatusTypeId
     ? boothData.statusTypes.find((t) => t.id === boothData.activeStatusTypeId) ?? null
     : null;
+
+  // Booths for EVERY level (one-shot from each render doc), so search / counts span the
+  // whole map. The active level uses the live `booths` (fresher); others the loaded set.
+  const [levelBooths, setLevelBooths] = useState<Record<string, Booth[]>>({});
+  useEffect(() => {
+    if (!levels.length) return;
+    let alive = true;
+    Promise.all(
+      levels.map(async (lvl) => [lvl.id, (await getRenderBooths(id, lvl.id)) as Booth[]] as const),
+    ).then((pairs) => alive && setLevelBooths(Object.fromEntries(pairs)));
+    return () => {
+      alive = false;
+    };
+  }, [id, levels]);
+
+  const searchBooths = useMemo<SearchBooth[]>(() => {
+    const out: SearchBooth[] = [];
+    for (const lvl of levels) {
+      const lb = lvl.id === activeLevel?.id ? booths ?? [] : levelBooths[lvl.id] ?? [];
+      lb.forEach((booth, i) =>
+        out.push({ booth, levelId: lvl.id, levelName: lvl.name, levelIndex: i }),
+      );
+    }
+    return out;
+  }, [levels, activeLevel?.id, booths, levelBooths]);
+
   const boothNumbers = useMemo(
-    () => (booths ?? []).map((b) => b.number).filter((n): n is string => !!n),
-    [booths],
+    () => Array.from(new Set(searchBooths.map((s) => s.booth.number).filter((n): n is string => !!n))),
+    [searchBooths],
   );
+  // Every booth across the map (all levels) — for map-wide status counts in the legend.
+  const allBooths = useMemo(() => searchBooths.map((s) => s.booth), [searchBooths]);
+
+  // Cross-level search pick: after switching to another level, focus the booth once its
+  // render has actually loaded. Gate on `renderLevel` (not `activeLevel`) so we don't act
+  // on the previous level's still-mounted booths during the switch.
+  const [pendingFocus, setPendingFocus] = useState<{ levelId: string; number: string | null } | null>(null);
+  useEffect(() => {
+    if (!pendingFocus || renderLevel !== pendingFocus.levelId || !booths) return;
+    const i = booths.findIndex((b) => b.number === pendingFocus.number);
+    if (i < 0) return; // target level's booths not in yet — keep waiting (don't clear)
+    setPendingFocus(null);
+    setSelected(i);
+    // Let the switched-to level's PanZoom mount + fit before panning to the booth. Not
+    // tied to effect cleanup on purpose: a later booths change must not cancel this.
+    setTimeout(() => panzoomRef.current?.focusBooth(i), 350);
+  }, [pendingFocus, renderLevel, booths]);
 
   return (
     <div className="h-screen flex flex-col">
@@ -318,27 +368,27 @@ function Viewer({ id }: { id: string }) {
             <Spinner />
           </Centered>
         )}
-        {selectedBooth && activeLevel && (
+        {selectedBooth && (
           <BoothInfoPanel
             mapId={id}
-            levelId={activeLevel.id}
             booth={selectedBooth}
             assignment={selectedBooth.number ? boothData.assignments[selectedBooth.number] : undefined}
             statusTypes={boothData.statusTypes}
             onClose={() => setSelected(null)}
           />
         )}
-        {!showSearch && activeStatusType && booths && booths.length > 0 && (
+        {!showSearch && activeStatusType && allBooths.length > 0 && (
           <StatusLegend
             type={activeStatusType}
-            booths={booths}
+            booths={allBooths}
             assignments={boothData.assignments}
             onClear={() => setActiveStatusType(id, null)}
           />
         )}
-        {showSearch && booths && (
+        {showSearch && (
           <SearchPanel
-            booths={booths}
+            booths={searchBooths}
+            multiLevel={levels.length > 1}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
             query={searchQuery}
@@ -347,19 +397,41 @@ function Viewer({ id }: { id: string }) {
             onQueryChange={onSearchQuery}
             onViewChange={onSearchView}
             onStatusFilterChange={onSearchStatusFilter}
-            onResults={(idx) => setSearchMatches(idx.length ? new Set(idx) : null)}
-            onPick={(i) => {
-              setSelected(i);
-              panzoomRef.current?.focusBooth(i);
+            onResults={(idx) => {
+              // Ring only the matches on the CURRENT level (indices into its booth list).
+              const cur = new Set<number>();
+              idx.forEach((i) => {
+                const sb = searchBooths[i];
+                if (sb && sb.levelId === activeLevel?.id) cur.add(sb.levelIndex);
+              });
+              setSearchMatches(cur.size ? cur : null);
             }}
-            onFrameAll={(idx) => panzoomRef.current?.frameBooths(idx)}
+            onPick={(i) => {
+              const sb = searchBooths[i];
+              if (!sb) return;
+              if (sb.levelId === activeLevel?.id) {
+                setSelected(sb.levelIndex);
+                panzoomRef.current?.focusBooth(sb.levelIndex);
+              } else {
+                // jump to the booth's level, then focus once it renders
+                setPendingFocus({ levelId: sb.levelId, number: sb.booth.number });
+                setActiveLevelId(sb.levelId);
+              }
+            }}
+            onFrameAll={(idx) =>
+              panzoomRef.current?.frameBooths(
+                idx
+                  .map((i) => searchBooths[i])
+                  .filter((sb) => sb && sb.levelId === activeLevel?.id)
+                  .map((sb) => sb.levelIndex),
+              )
+            }
             onClose={closeSearch}
           />
         )}
         {showImport && activeLevel && (
           <ExhibitorImportDialog
             mapId={id}
-            levelId={activeLevel.id}
             boothNumbers={boothNumbers}
             assignments={boothData.assignments}
             onClose={() => setShowImport(false)}

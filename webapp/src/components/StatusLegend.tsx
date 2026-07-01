@@ -6,8 +6,8 @@ import type { BoothAssignment, StatusType } from "@/lib/maps";
 
 /**
  * Floating legend shown while a status type is the map's highlight lens. Lists the
- * type's statuses with their colour + a live count of booths in each (this level),
- * and a "Clear" that drops the highlight.
+ * type's statuses with their colour + a live count of booths in each (across the whole
+ * map — assignments are map-wide), and a "Clear" that drops the highlight.
  */
 export function StatusLegend({
   type,

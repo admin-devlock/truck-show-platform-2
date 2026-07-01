@@ -5,14 +5,22 @@ import type { Booth } from "./PanZoom";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
 import { StatusFilterMenu } from "./StatusFilterMenu";
 
+/** A booth in the cross-level search index, tagged with the level it lives on. */
+export type SearchBooth = {
+  booth: Booth;
+  levelId: string;
+  levelName: string;
+  levelIndex: number;
+};
+
 /**
- * Floating search panel for the viewer. Finds booths by booth number / exhibitor name
- * and/or by a chosen status (the filter select at the end of the bar). Matches are
- * reported up to the viewer (`onResults`) so PanZoom highlights them; the "map" view
- * frames them all.
+ * Floating search panel. Searches booths across ALL levels of the map (by number /
+ * exhibitor name and/or a chosen status). Picking a result on another level switches to
+ * it. Matches are reported up (`onResults`) as indices into `booths`.
  */
 export function SearchPanel({
   booths,
+  multiLevel,
   assignments,
   statusTypes,
   query,
@@ -26,7 +34,8 @@ export function SearchPanel({
   onFrameAll,
   onClose,
 }: {
-  booths: Booth[];
+  booths: SearchBooth[];
+  multiLevel: boolean;
   assignments: Record<string, BoothAssignment>;
   statusTypes: StatusType[];
   query: string;
@@ -48,19 +57,18 @@ export function SearchPanel({
   const filterSet = useMemo(() => new Set(statusFilter), [statusFilter]);
   const searching = q.trim() !== "" || filterSet.size > 0;
 
-  // statusId -> {name, color}
   const statusInfo = useMemo(() => {
     const m = new Map<string, { name: string; color: string }>();
     statusTypes.forEach((t) => t.statuses.forEach((s) => m.set(s.id, { name: s.name, color: s.color })));
     return m;
   }, [statusTypes]);
 
-  // Matches: booth text (number/exhibitor) AND the status filter, when either is set.
   const matches = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term && filterSet.size === 0) return [] as number[];
     const out: number[] = [];
-    booths.forEach((b, i) => {
+    booths.forEach((sb, i) => {
+      const b = sb.booth;
       const num = (b.number ?? "").toLowerCase();
       const name = (b.number ? assignments[b.number]?.exhibitor : "")?.toLowerCase() ?? "";
       const textOk = !term || num.includes(term) || name.includes(term);
@@ -69,13 +77,12 @@ export function SearchPanel({
       if (textOk && statusOk) out.push(i);
     });
     return out.sort((a, b) => {
-      const na = booths[a].number ?? "";
-      const nb = booths[b].number ?? "";
+      const na = booths[a].booth.number ?? "";
+      const nb = booths[b].booth.number ?? "";
       return na.localeCompare(nb, undefined, { numeric: true });
     });
   }, [q, filterSet, booths, assignments]);
 
-  // Report matches up so the map highlights them; frame them when in map view.
   useEffect(() => {
     onResults(matches);
     if (view === "map" && matches.length) onFrameAll(matches);
@@ -124,6 +131,7 @@ export function SearchPanel({
         <div className="flex items-center justify-between px-3 py-2 border-b border-[color:var(--color-line)]">
           <span className="text-xs text-[color:var(--color-ink-soft)]">
             {matches.length} {matches.length === 1 ? "result" : "results"}
+            {multiLevel && <span className="text-[color:var(--color-ink-soft)]"> · all levels</span>}
           </span>
           <div className="flex rounded-md border border-[color:var(--color-line)] overflow-hidden text-xs">
             {(["list", "map"] as const).map((v) => (
@@ -152,7 +160,8 @@ export function SearchPanel({
           ) : (
             <ul className="divide-y divide-[color:var(--color-line)]">
               {matches.map((i) => {
-                const b = booths[i];
+                const sb = booths[i];
+                const b = sb.booth;
                 const a = b.number ? assignments[b.number] : undefined;
                 const st = a?.statusId ? statusInfo.get(a.statusId) : undefined;
                 return (
@@ -170,11 +179,11 @@ export function SearchPanel({
                             <span className="text-[color:var(--color-ink-soft)] italic">Unassigned</span>
                           )}
                         </span>
-                        {b.width_m != null && (
-                          <span className="block text-xs text-[color:var(--color-ink-soft)]">
-                            {b.width_m} × {b.depth_m} m
-                          </span>
-                        )}
+                        <span className="block text-xs text-[color:var(--color-ink-soft)]">
+                          {multiLevel && <span>{sb.levelName}</span>}
+                          {multiLevel && b.width_m != null && " · "}
+                          {b.width_m != null && `${b.width_m} × ${b.depth_m} m`}
+                        </span>
                       </span>
                       {st && (
                         <span
@@ -196,7 +205,7 @@ export function SearchPanel({
       {searching && view === "map" && (
         <div className="px-3 py-3 text-xs text-[color:var(--color-ink-soft)] leading-relaxed">
           {matches.length
-            ? `Highlighted ${matches.length} ${matches.length === 1 ? "booth" : "booths"} on the map.`
+            ? `Highlighted ${matches.length} ${matches.length === 1 ? "booth" : "booths"} across the map.`
             : "No booths match."}
           {matches.length > 0 && (
             <button

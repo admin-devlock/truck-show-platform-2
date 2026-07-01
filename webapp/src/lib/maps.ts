@@ -95,6 +95,18 @@ export function subscribeRender(id: string, levelId: string, cb: (r: MapRender |
   });
 }
 
+/** One-shot read of a level's booth records (parsed from its render doc). Empty for
+ *  sample levels that render from svgUrl. Used to search/aggregate across all levels. */
+export async function getRenderBooths(id: string, levelId: string): Promise<unknown[]> {
+  const snap = await getDoc(doc(db, "maps", id, "render", levelId));
+  if (!snap.exists()) return [];
+  try {
+    return (JSON.parse((snap.data() as MapRender).boothsJson).booths as unknown[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Create a map by uploading a CAD file and converting it server-side.
  *
@@ -213,40 +225,24 @@ export type BoothData = {
   splits: Record<string, BoothSplit>;
 };
 
-// Status types are MAP-WIDE (shared across levels). They live in `meta/booths`, which
-// for the legacy single-level map also holds that level's assignments.
+// Status types AND booth assignments (exhibitor + status) are MAP-WIDE: one exhibitor
+// and one status per booth NUMBER across the whole map (numbers are unique across the
+// levels), so search / filtering / counts all span every level. It all lives in the
+// single collaborative doc `maps/{id}/meta/booths`.
 const boothMeta = (id: string) => doc(db, "maps", id, "meta", "booths");
-
-// Assignments are PER-LEVEL (booth numbers can collide between levels). The legacy
-// default level keeps its assignments in `meta/booths`; any added level stores them in
-// `meta/level_{levelId}`. This preserves all existing data with no migration.
 export const DEFAULT_LEVEL_ID = "main";
-const assignDoc = (id: string, levelId: string) =>
-  levelId === DEFAULT_LEVEL_ID ? boothMeta(id) : doc(db, "maps", id, "meta", `level_${levelId}`);
 
-/** Subscribe to a level's assignments + splits + the map-wide status types, merged. */
-export function subscribeBoothData(id: string, levelId: string, cb: (d: BoothData) => void) {
-  let assignments: Record<string, BoothAssignment> = {};
-  let splits: Record<string, BoothSplit> = {};
-  let statusTypes: StatusType[] = [];
-  let activeStatusTypeId: string | null = null;
-  const emit = () => cb({ assignments, statusTypes, activeStatusTypeId, splits });
-  const unsubA = onSnapshot(assignDoc(id, levelId), (snap) => {
+/** Subscribe to the map-wide assignments + splits + status types. */
+export function subscribeBoothData(id: string, cb: (d: BoothData) => void) {
+  return onSnapshot(boothMeta(id), (snap) => {
     const d = (snap.data() as Partial<BoothData>) || {};
-    assignments = d.assignments ?? {};
-    splits = d.splits ?? {};
-    emit();
+    cb({
+      assignments: d.assignments ?? {},
+      statusTypes: d.statusTypes ?? [],
+      activeStatusTypeId: d.activeStatusTypeId ?? null,
+      splits: d.splits ?? {},
+    });
   });
-  const unsubS = onSnapshot(boothMeta(id), (snap) => {
-    const d = (snap.data() as Partial<BoothData>) || {};
-    statusTypes = d.statusTypes ?? [];
-    activeStatusTypeId = d.activeStatusTypeId ?? null;
-    emit();
-  });
-  return () => {
-    unsubA();
-    unsubS();
-  };
 }
 
 /**
@@ -255,7 +251,6 @@ export function subscribeBoothData(id: string, levelId: string, cb: (d: BoothDat
  */
 export async function splitBooth(
   id: string,
-  levelId: string,
   sourceNumber: string,
   parts: SplitPart[],
   currentAssignment?: BoothAssignment,
@@ -270,21 +265,21 @@ export async function splitBooth(
       ...(currentAssignment.statusId ? { statusId: currentAssignment.statusId } : {}),
     };
   }
-  await setDoc(assignDoc(id, levelId), {}, { merge: true }); // ensure doc exists
-  await updateDoc(assignDoc(id, levelId), update);
+  await setDoc(boothMeta(id), {}, { merge: true }); // ensure doc exists
+  await updateDoc(boothMeta(id), update);
 }
 
 /** Undo a split, restoring the original booth. */
-export async function unsplitBooth(id: string, levelId: string, sourceNumber: string) {
-  await updateDoc(assignDoc(id, levelId), { [`splits.${sourceNumber}`]: deleteField() });
+export async function unsplitBooth(id: string, sourceNumber: string) {
+  await updateDoc(boothMeta(id), { [`splits.${sourceNumber}`]: deleteField() });
 }
 
-export async function setBoothExhibitor(id: string, levelId: string, boothNumber: string, exhibitor: string) {
-  await setDoc(assignDoc(id, levelId), { assignments: { [boothNumber]: { exhibitor } } }, { merge: true });
+export async function setBoothExhibitor(id: string, boothNumber: string, exhibitor: string) {
+  await setDoc(boothMeta(id), { assignments: { [boothNumber]: { exhibitor } } }, { merge: true });
 }
 
-export async function setBoothStatus(id: string, levelId: string, boothNumber: string, statusId: string | null) {
-  await setDoc(assignDoc(id, levelId), { assignments: { [boothNumber]: { statusId } } }, { merge: true });
+export async function setBoothStatus(id: string, boothNumber: string, statusId: string | null) {
+  await setDoc(boothMeta(id), { assignments: { [boothNumber]: { statusId } } }, { merge: true });
 }
 
 export async function saveStatusTypes(id: string, statusTypes: StatusType[]) {
@@ -331,16 +326,15 @@ export async function setSearchState(
   await setDoc(searchDoc(id), { ...patch, by }, { merge: true }).catch(() => {});
 }
 
-/** One-shot read of a level's assignments + the map-wide status types. */
-export async function getBoothDataOnce(id: string, levelId: string): Promise<BoothData> {
-  const [aSnap, sSnap] = await Promise.all([getDoc(assignDoc(id, levelId)), getDoc(boothMeta(id))]);
-  const s = (sSnap.data() as Partial<BoothData>) || {};
-  const a = (aSnap.data() as Partial<BoothData>) || {};
+/** One-shot read of the map-wide assignments + status types. */
+export async function getBoothDataOnce(id: string): Promise<BoothData> {
+  const snap = await getDoc(boothMeta(id));
+  const d = (snap.data() as Partial<BoothData>) || {};
   return {
-    assignments: a.assignments ?? {},
-    statusTypes: s.statusTypes ?? [],
-    activeStatusTypeId: s.activeStatusTypeId ?? null,
-    splits: a.splits ?? {},
+    assignments: d.assignments ?? {},
+    statusTypes: d.statusTypes ?? [],
+    activeStatusTypeId: d.activeStatusTypeId ?? null,
+    splits: d.splits ?? {},
   };
 }
 
@@ -348,28 +342,26 @@ export async function getBoothDataOnce(id: string, levelId: string): Promise<Boo
  * Bulk-assign exhibitor names by booth number (e.g. from an imported list). Merges
  * into existing assignments, so a booth's status is preserved.
  */
-export async function importExhibitors(id: string, levelId: string, mapping: Record<string, string>) {
+export async function importExhibitors(id: string, mapping: Record<string, string>) {
   const assignments: Record<string, BoothAssignment> = {};
   for (const [num, name] of Object.entries(mapping)) {
     assignments[num] = { exhibitor: name.trim() };
   }
   if (Object.keys(assignments).length === 0) return;
-  await setDoc(assignDoc(id, levelId), { assignments }, { merge: true });
+  await setDoc(boothMeta(id), { assignments }, { merge: true });
 }
 
 /**
- * Copy exhibitor assignments from another map's level into this level, keyed by booth
- * number. When `includeStatuses` is true the source's status-type definitions are copied
- * too (so the copied statusIds resolve) and each booth's status is carried over.
+ * Copy exhibitor assignments from another map into this one, keyed by booth number.
+ * When `includeStatuses` is true the source's status-type definitions are copied too
+ * (so the copied statusIds resolve) and each booth's status is carried over.
  */
 export async function copyAssignmentsFromMap(
   targetId: string,
-  targetLevelId: string,
   sourceId: string,
-  sourceLevelId: string,
   includeStatuses: boolean,
 ) {
-  const source = await getBoothDataOnce(sourceId, sourceLevelId);
+  const source = await getBoothDataOnce(sourceId);
   const assignments: Record<string, BoothAssignment> = {};
   for (const [num, a] of Object.entries(source.assignments)) {
     const next: BoothAssignment = {};
@@ -377,7 +369,7 @@ export async function copyAssignmentsFromMap(
     if (includeStatuses && a.statusId) next.statusId = a.statusId;
     if (Object.keys(next).length) assignments[num] = next;
   }
-  await setDoc(assignDoc(targetId, targetLevelId), { assignments }, { merge: true });
+  await setDoc(boothMeta(targetId), { assignments }, { merge: true });
   if (includeStatuses) {
     await setDoc(
       boothMeta(targetId),
@@ -391,7 +383,8 @@ export async function copyAssignmentsFromMap(
 // ---------------------------------------------------------------------------
 // Levels: a map can hold multiple CAD floorplans (e.g. Plaza / Mezzanine / Halls).
 // Each level is a doc in `maps/{id}/levels/{levelId}` with its own render subdoc at
-// `render/{levelId}` and per-level assignments (see assignDoc above).
+// `render/{levelId}`. Assignments are NOT per-level — they're map-wide in meta/booths
+// (keyed by booth number, which is unique across levels; see subscribeBoothData above).
 //
 // Legacy maps (created before levels) have no `levels` docs; the viewer synthesizes a
 // single default level from the map doc, whose render is `render/main`. Adding a level
@@ -544,8 +537,9 @@ export type LevelBackup = {
   thumbSvg: string | null;
   order: number;
   render: MapRender | null;
-  assignments: Record<string, BoothAssignment>;
-  splits: Record<string, BoothSplit>;
+  // Legacy per-level backups carried these; assignments/splits are now map-wide (below).
+  assignments?: Record<string, BoothAssignment>;
+  splits?: Record<string, BoothSplit>;
 };
 export type MapBackup = {
   version: 1;
@@ -553,10 +547,12 @@ export type MapBackup = {
   title: string;
   statusTypes: StatusType[];
   activeStatusTypeId: string | null;
+  assignments: Record<string, BoothAssignment>; // map-wide, keyed by booth number
+  splits: Record<string, BoothSplit>;
   levels: LevelBackup[];
 };
 
-/** Read a map's complete state (all levels + renders + assignments + statuses). */
+/** Read a map's complete state (all levels + renders + map-wide assignments + statuses). */
 export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
   const levels = await getLevelsOnce(map);
   const metaSnap = await getDoc(boothMeta(map.id));
@@ -564,10 +560,7 @@ export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
 
   const levelBackups: LevelBackup[] = await Promise.all(
     levels.map(async (lvl) => {
-      const [renderSnap, assignSnap] = await Promise.all([
-        getDoc(doc(db, "maps", map.id, "render", lvl.id)),
-        getDoc(assignDoc(map.id, lvl.id)),
-      ]);
+      const renderSnap = await getDoc(doc(db, "maps", map.id, "render", lvl.id));
       return {
         name: lvl.name,
         sourceFile: lvl.sourceFile ?? null,
@@ -576,8 +569,6 @@ export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
         thumbSvg: lvl.thumbSvg ?? null,
         order: lvl.order ?? 0,
         render: renderSnap.exists() ? (renderSnap.data() as MapRender) : null,
-        assignments: (assignSnap.data() as Partial<BoothData>)?.assignments ?? {},
-        splits: (assignSnap.data() as Partial<BoothData>)?.splits ?? {},
       };
     }),
   );
@@ -588,6 +579,8 @@ export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
     title: map.title,
     statusTypes: meta.statusTypes ?? [],
     activeStatusTypeId: meta.activeStatusTypeId ?? null,
+    assignments: meta.assignments ?? {},
+    splits: meta.splits ?? {},
     levels: levelBackups.sort((a, b) => a.order - b.order),
   };
 }
@@ -617,10 +610,19 @@ export async function restoreMap(
   });
   const mapId = mapRef.id;
 
-  // Shared status types.
+  // Map-wide status types + assignments + splits. (Old backups stored assignments/splits
+  // per level; fold those in for backward compatibility.)
+  const assignments: Record<string, BoothAssignment> = { ...(backup.assignments ?? {}) };
+  const splits: Record<string, BoothSplit> = { ...(backup.splits ?? {}) };
+  for (const lvl of backup.levels) {
+    Object.assign(assignments, lvl.assignments ?? {});
+    Object.assign(splits, lvl.splits ?? {});
+  }
   await setDoc(boothMeta(mapId), {
     statusTypes: backup.statusTypes ?? [],
     activeStatusTypeId: backup.activeStatusTypeId ?? null,
+    assignments,
+    splits,
   });
 
   // Levels (first becomes the default "main" level to match the storage convention).
@@ -643,12 +645,6 @@ export async function restoreMap(
         viewBox: lvl.render.viewBox ?? null,
       });
     }
-    const levelData: Partial<BoothData> = {};
-    if (lvl.assignments && Object.keys(lvl.assignments).length) levelData.assignments = lvl.assignments;
-    if (lvl.splits && Object.keys(lvl.splits).length) levelData.splits = lvl.splits;
-    if (Object.keys(levelData).length) {
-      await setDoc(assignDoc(mapId, levelId), levelData, { merge: true });
-    }
   }
   return mapId;
 }
@@ -660,19 +656,13 @@ export async function duplicateMap(user: Identity, map: MapDoc): Promise<string>
   return restoreMap(user, backup, `${map.title} (copy)`);
 }
 
-/** Remove a level (its render + assignments). Refuses to remove the last level. */
+/** Remove a level (its render). Refuses to remove the last level. Map-wide assignments
+ *  are keyed by booth number and left intact (harmless if the level is re-added). */
 export async function removeLevel(map: MapDoc, levelId: string) {
   await promoteDefaultLevel(map);
   const levels = await getDocs(levelsCol(map.id));
   if (levels.size <= 1) throw new Error("A map must keep at least one level.");
   await deleteDoc(doc(db, "maps", map.id, "render", levelId)).catch(() => {});
-  if (levelId !== DEFAULT_LEVEL_ID) {
-    await deleteDoc(doc(db, "maps", map.id, "meta", `level_${levelId}`)).catch(() => {});
-  } else {
-    // The default level's assignments live in meta/booths alongside shared status types;
-    // clear just the assignments, keep the status types for the remaining levels.
-    await setDoc(boothMeta(map.id), { assignments: {} }, { merge: true }).catch(() => {});
-  }
   await deleteDoc(levelDoc(map.id, levelId));
   await updateDoc(doc(db, "maps", map.id), { updatedAt: serverTimestamp() });
 }
