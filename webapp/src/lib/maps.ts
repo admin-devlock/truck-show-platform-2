@@ -305,7 +305,7 @@ export type SearchState = {
   query: string;
   active: boolean;
   view: "list" | "map";
-  statusFilter: string | null; // a statusId to filter results by, or null for any
+  statusFilter: string[]; // statusIds to include; empty = any status
   by: string;
 };
 const searchDoc = (id: string) => doc(db, "maps", id, "meta", "search");
@@ -317,7 +317,7 @@ export function subscribeSearch(id: string, cb: (s: SearchState) => void) {
       query: d.query ?? "",
       active: d.active ?? false,
       view: d.view ?? "list",
-      statusFilter: d.statusFilter ?? null,
+      statusFilter: Array.isArray(d.statusFilter) ? d.statusFilter : [],
       by: d.by ?? "",
     });
   });

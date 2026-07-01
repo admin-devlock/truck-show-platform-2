@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { Booth } from "./PanZoom";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
+import { StatusFilterMenu } from "./StatusFilterMenu";
 
 /**
  * Floating search panel for the viewer. Finds booths by booth number / exhibitor name
@@ -30,10 +31,10 @@ export function SearchPanel({
   statusTypes: StatusType[];
   query: string;
   view: "list" | "map";
-  statusFilter: string | null;
+  statusFilter: string[];
   onQueryChange: (q: string) => void;
   onViewChange: (v: "list" | "map") => void;
-  onStatusFilterChange: (s: string | null) => void;
+  onStatusFilterChange: (s: string[]) => void;
   onResults: (indices: number[]) => void;
   onPick: (index: number) => void;
   onFrameAll: (indices: number[]) => void;
@@ -44,7 +45,8 @@ export function SearchPanel({
   useEffect(() => inputRef.current?.focus(), []);
 
   const hasStatuses = statusTypes.some((t) => t.statuses.length > 0);
-  const searching = q.trim() !== "" || !!statusFilter;
+  const filterSet = useMemo(() => new Set(statusFilter), [statusFilter]);
+  const searching = q.trim() !== "" || filterSet.size > 0;
 
   // statusId -> {name, color}
   const statusInfo = useMemo(() => {
@@ -56,13 +58,14 @@ export function SearchPanel({
   // Matches: booth text (number/exhibitor) AND the status filter, when either is set.
   const matches = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term && !statusFilter) return [] as number[];
+    if (!term && filterSet.size === 0) return [] as number[];
     const out: number[] = [];
     booths.forEach((b, i) => {
       const num = (b.number ?? "").toLowerCase();
       const name = (b.number ? assignments[b.number]?.exhibitor : "")?.toLowerCase() ?? "";
       const textOk = !term || num.includes(term) || name.includes(term);
-      const statusOk = !statusFilter || (!!b.number && assignments[b.number]?.statusId === statusFilter);
+      const sid = b.number ? assignments[b.number]?.statusId : undefined;
+      const statusOk = filterSet.size === 0 || (!!sid && filterSet.has(sid));
       if (textOk && statusOk) out.push(i);
     });
     return out.sort((a, b) => {
@@ -70,7 +73,7 @@ export function SearchPanel({
       const nb = booths[b].number ?? "";
       return na.localeCompare(nb, undefined, { numeric: true });
     });
-  }, [q, statusFilter, booths, assignments]);
+  }, [q, filterSet, booths, assignments]);
 
   // Report matches up so the map highlights them; frame them when in map view.
   useEffect(() => {
@@ -101,27 +104,11 @@ export function SearchPanel({
             className="flex-1 min-w-0 text-sm outline-none bg-transparent"
           />
           {hasStatuses && (
-            <select
-              value={statusFilter ?? ""}
-              onChange={(e) => onStatusFilterChange(e.target.value || null)}
-              title="Filter by status"
-              className={`shrink-0 max-w-[8rem] text-xs rounded-md border px-1.5 py-1 outline-none cursor-pointer bg-transparent ${
-                statusFilter
-                  ? "border-[color:var(--color-accent)] text-[color:var(--color-accent)]"
-                  : "border-[color:var(--color-line)] text-[color:var(--color-ink-soft)]"
-              }`}
-            >
-              <option value="">Any status</option>
-              {statusTypes.map((t) => (
-                <optgroup key={t.id} label={t.name}>
-                  {t.statuses.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <StatusFilterMenu
+              statusTypes={statusTypes}
+              selected={statusFilter}
+              onChange={onStatusFilterChange}
+            />
           )}
           <button
             onClick={onClose}

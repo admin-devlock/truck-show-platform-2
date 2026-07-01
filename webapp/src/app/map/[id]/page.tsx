@@ -67,7 +67,7 @@ function Viewer({ id }: { id: string }) {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchView, setSearchView] = useState<"list" | "map">("list");
-  const [searchStatusFilter, setSearchStatusFilter] = useState<string | null>(null);
+  const [searchStatusFilter, setSearchStatusFilter] = useState<string[]>([]);
   const searchWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panzoomRef = useRef<PanZoomHandle>(null);
   const others = usePresence(id, identity);
@@ -86,7 +86,7 @@ function Viewer({ id }: { id: string }) {
 
   // Push a search change to all collaborators (query writes are debounced).
   const pushSearch = (
-    patch: { query?: string; active?: boolean; view?: "list" | "map"; statusFilter?: string | null },
+    patch: { query?: string; active?: boolean; view?: "list" | "map"; statusFilter?: string[] },
     debounce = false,
   ) => {
     if (!identity) return;
@@ -105,7 +105,7 @@ function Viewer({ id }: { id: string }) {
     setSearchView(v);
     pushSearch({ view: v });
   };
-  const onSearchStatusFilter = (statusFilter: string | null) => {
+  const onSearchStatusFilter = (statusFilter: string[]) => {
     setSearchStatusFilter(statusFilter);
     pushSearch({ statusFilter });
   };
