@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { Booth } from "./PanZoom";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
-import { StatusFilterMenu } from "./StatusFilterMenu";
+import { StatusFilterMenu, NO_STATUS_ID } from "./StatusFilterMenu";
 
 /** A booth in the cross-level search index, tagged with the level it lives on. */
 export type SearchBooth = {
@@ -73,7 +73,9 @@ export function SearchPanel({
       const name = (b.number ? assignments[b.number]?.exhibitor : "")?.toLowerCase() ?? "";
       const textOk = !term || num.includes(term) || name.includes(term);
       const sid = b.number ? assignments[b.number]?.statusId : undefined;
-      const statusOk = filterSet.size === 0 || (!!sid && filterSet.has(sid));
+      // Empty filter = all on. Otherwise a booth passes iff its status (or the
+      // "no status" category) is among the still-checked ones.
+      const statusOk = filterSet.size === 0 || filterSet.has(sid ?? NO_STATUS_ID);
       if (textOk && statusOk) out.push(i);
     });
     return out.sort((a, b) => {

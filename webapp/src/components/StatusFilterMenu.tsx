@@ -5,10 +5,17 @@ import type { StatusType } from "@/lib/maps";
 
 const MENU_W = 224; // px (w-56)
 
+// Pseudo-id for "booth has no status", so unstatused booths are their own togglable
+// filter category (shared with SearchPanel's matching).
+export const NO_STATUS_ID = "__no_status__";
+
 /**
  * Google-Docs-style checklist filter for search: every status is individually
  * togglable, and clicking a status type toggles all of its statuses at once (all on /
- * all off). `selected` is the list of enabled statusIds (empty = no filter).
+ * all off). All statuses start ON — an empty `selected` is the canonical "all on / no
+ * filter" state (so an empty query still matches nothing until the user narrows). As
+ * soon as the user unchecks anything, `selected` becomes the explicit list still on;
+ * re-checking everything canonicalises back to [].
  */
 export function StatusFilterMenu({
   statusTypes,
@@ -22,7 +29,12 @@ export function StatusFilterMenu({
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const sel = useMemo(() => new Set(selected), [selected]);
+  const allIds = useMemo(
+    () => [...statusTypes.flatMap((t) => t.statuses.map((s) => s.id)), NO_STATUS_ID],
+    [statusTypes],
+  );
+  // Effective checked set: empty selection means "all on".
+  const sel = useMemo(() => new Set(selected.length ? selected : allIds), [selected, allIds]);
 
   // Position the menu with fixed coords from the button, so it isn't clipped by the
   // search panel's overflow.
@@ -32,11 +44,15 @@ export function StatusFilterMenu({
     setOpen(true);
   };
 
+  // Emit the new set, collapsing "everything checked" back to [] (the all-on default).
+  const emit = (next: Set<string>) =>
+    onChange(allIds.every((id) => next.has(id)) ? [] : [...next]);
+
   const toggleStatus = (id: string) => {
     const next = new Set(sel);
     if (next.has(id)) next.delete(id);
     else next.add(id);
-    onChange([...next]);
+    emit(next);
   };
   const typeState = (t: StatusType): "on" | "off" | "some" => {
     const ids = t.statuses.map((s) => s.id);
@@ -48,7 +64,7 @@ export function StatusFilterMenu({
     const allOn = ids.every((id) => sel.has(id));
     const next = new Set(sel);
     ids.forEach((id) => (allOn ? next.delete(id) : next.add(id)));
-    onChange([...next]);
+    emit(next);
   };
 
   const active = selected.length > 0;
@@ -115,6 +131,16 @@ export function StatusFilterMenu({
                 ))}
               </div>
             ))}
+            <div className="border-t border-[color:var(--color-line)] mt-1 pt-1">
+              <button
+                onClick={() => toggleStatus(NO_STATUS_ID)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[#f1f3f4] text-left"
+              >
+                <Check state={sel.has(NO_STATUS_ID) ? "on" : "off"} />
+                <span className="h-3 w-3 rounded-sm shrink-0 border border-[color:var(--color-line)] bg-white" />
+                <span className="text-xs truncate text-[color:var(--color-ink-soft)]">No status</span>
+              </button>
+            </div>
           </div>
         </>
       )}

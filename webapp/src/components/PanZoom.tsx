@@ -21,7 +21,8 @@ import type { BoothAssignment, StatusType } from "@/lib/maps";
  * width at any zoom. Wheel zooms toward the cursor; drag pans. Effectively unlimited.
  */
 const MIN_W_FACTOR = 0.0005; // smallest viewBox width as a fraction of the drawing (max zoom-in)
-const MAX_W_FACTOR = 50; // largest (max zoom-out)
+const MAX_W_FACTOR = 4; // largest (max zoom-out) — beyond this the drawing is a tiny speck
+const EDGE_KEEP = 0.2; // keep ≥20% of the drawing (or viewport, whichever is smaller) on-screen
 
 type World = { W: number; H: number };
 type Cam = { x: number; y: number; w: number; h: number };
@@ -230,10 +231,18 @@ export const PanZoom = forwardRef<PanZoomHandle, {
     const svg = svgElRef.current;
     const cam = camRef.current;
     if (!svg || !cam) return;
+    if (world) {
+      // Clamp the pan so the drawing can never be scrolled entirely out of view: always
+      // keep at least EDGE_KEEP of it (or of the viewport, whichever is smaller) on-screen.
+      const keepX = Math.min(cam.w, world.W) * EDGE_KEEP;
+      const keepY = Math.min(cam.h, world.H) * EDGE_KEEP;
+      cam.x = Math.min(world.W - keepX, Math.max(keepX - cam.w, cam.x));
+      cam.y = Math.min(world.H - keepY, Math.max(keepY - cam.h, cam.y));
+    }
     svg.setAttribute("viewBox", `${cam.x} ${cam.y} ${cam.w} ${cam.h}`);
     setZoomPct(Math.round((fitWRef.current / cam.w) * 100));
     positionCursors();
-  }, [positionCursors]);
+  }, [world, positionCursors]);
 
   const fit = useCallback(() => {
     const el = containerRef.current;
