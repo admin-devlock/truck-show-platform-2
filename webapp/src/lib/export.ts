@@ -98,7 +98,10 @@ function buildImagePdf(jpeg: Uint8Array, iw: number, ih: number): Blob {
   };
   const endObj = () => push(enc("endobj\n"));
 
-  push(enc("%PDF-1.4\n%\xff\xff\xff\xff\n"));
+  push(enc("%PDF-1.4\n"));
+  // Binary-file marker: four raw high bytes. Must be emitted as raw bytes — routing
+  // "\xff" through TextEncoder would UTF-8-encode each as 0xC3 0xBF, not 0xFF.
+  push(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0xff, 0x0a]));
 
   startObj(1);
   push(enc("<< /Type /Catalog /Pages 2 0 R >>\n"));
@@ -152,8 +155,14 @@ function buildImagePdf(jpeg: Uint8Array, iw: number, ih: number): Blob {
 // CSV: one row per booth, exhibitor + the chosen status in each status type.
 // ---------------------------------------------------------------------------
 function csvCell(v: string | number | null | undefined): string {
-  const s = v == null ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  if (v == null) return "";
+  if (typeof v === "number") return String(v); // numeric cells: never treated as formulas
+  let s = v;
+  // Neutralize spreadsheet formula injection: a value a user typed (e.g. an exhibitor
+  // name) starting with = + - @ or a control char is executed as a formula by
+  // Excel/Sheets. Prefix with an apostrophe so it's read as text.
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export function boothsToCsv(

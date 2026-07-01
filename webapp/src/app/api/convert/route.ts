@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
-import { writeFile, readFile, unlink, mkdtemp } from "node:fs/promises";
+import { writeFile, readFile, rm, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -93,11 +93,7 @@ export async function POST(req: Request) {
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   } finally {
-    if (dir) {
-      // best-effort cleanup of the temp working dir
-      for (const f of ["in.dwg", "in.min.json", "out.svg", "out.booths.json", "out.thumb.svg"]) {
-        await unlink(join(dir, f)).catch(() => {});
-      }
-    }
+    // best-effort cleanup: remove the whole temp working dir (files + directory).
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }

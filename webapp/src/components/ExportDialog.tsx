@@ -47,7 +47,12 @@ export function ExportDialog({
     try {
       if (fmt === "csv") {
         const csv = boothsToCsv(booths, assignments, statusTypes);
-        downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `${base}.csv`);
+        // Prepend a UTF-8 BOM so Excel reads non-ASCII (e.g. the m² header, accented
+        // exhibitor names) correctly instead of as mojibake.
+        downloadBlob(
+          new Blob([String.fromCharCode(0xfeff) + csv], { type: "text/csv;charset=utf-8" }),
+          `${base}.csv`,
+        );
       } else {
         const svg = getSvg();
         if (!svg) throw new Error("The floorplan isn’t ready yet.");
