@@ -8,6 +8,7 @@ import { PanZoom, type Booth, type PanZoomHandle, type RemoteCursor } from "@/co
 import { BoothInfoPanel } from "@/components/BoothInfoPanel";
 import { StatusManager } from "@/components/StatusManager";
 import { SearchPanel } from "@/components/SearchPanel";
+import { StatusLegend } from "@/components/StatusLegend";
 import { ExhibitorImportDialog } from "@/components/ExhibitorImportDialog";
 import { ExportDialog } from "@/components/ExportDialog";
 import { LevelSwitcher } from "@/components/LevelSwitcher";
@@ -21,6 +22,7 @@ import {
   subscribeLevels,
   subscribeSearch,
   setSearchState,
+  setActiveStatusType,
   renameMap,
   type MapDoc,
   type MapRender,
@@ -198,6 +200,9 @@ function Viewer({ id }: { id: string }) {
   );
 
   const selectedBooth = selected != null ? booths?.[selected] : undefined;
+  const activeStatusType = boothData.activeStatusTypeId
+    ? boothData.statusTypes.find((t) => t.id === boothData.activeStatusTypeId) ?? null
+    : null;
   const boothNumbers = useMemo(
     () => (booths ?? []).map((b) => b.number).filter((n): n is string => !!n),
     [booths],
@@ -277,6 +282,7 @@ function Viewer({ id }: { id: string }) {
             onSelect={setSelected}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
+            activeStatusTypeId={boothData.activeStatusTypeId}
             highlight={searchMatches}
             cursors={cursors}
             onCursorMove={onCursorMove}
@@ -292,6 +298,7 @@ function Viewer({ id }: { id: string }) {
             onSelect={setSelected}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
+            activeStatusTypeId={boothData.activeStatusTypeId}
             highlight={searchMatches}
             cursors={cursors}
             onCursorMove={onCursorMove}
@@ -310,6 +317,14 @@ function Viewer({ id }: { id: string }) {
             assignment={selectedBooth.number ? boothData.assignments[selectedBooth.number] : undefined}
             statusTypes={boothData.statusTypes}
             onClose={() => setSelected(null)}
+          />
+        )}
+        {activeStatusType && booths && booths.length > 0 && (
+          <StatusLegend
+            type={activeStatusType}
+            booths={booths}
+            assignments={boothData.assignments}
+            onClear={() => setActiveStatusType(id, null)}
           />
         )}
         {showSearch && booths && (

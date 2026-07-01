@@ -117,6 +117,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   onSelect?: (i: number | null) => void;
   assignments?: Record<string, BoothAssignment>;
   statusTypes?: StatusType[];
+  activeStatusTypeId?: string | null;
   highlight?: Set<number> | null;
   cursors?: RemoteCursor[];
   onCursorMove?: (wx: number, wy: number) => void;
@@ -128,6 +129,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   onSelect,
   assignments,
   statusTypes,
+  activeStatusTypeId,
   highlight,
   cursors,
   onCursorMove,
@@ -138,6 +140,13 @@ export const PanZoom = forwardRef<PanZoomHandle, {
     (statusTypes ?? []).forEach((t) => t.statuses.forEach((s) => m.set(s.id, s.color)));
     return m;
   }, [statusTypes]);
+  // When a status type is the active highlight lens, only colour booths whose status
+  // belongs to it (others stay uncoloured). No active lens = colour every status.
+  const activeStatusIds = useMemo(() => {
+    if (!activeStatusTypeId) return null;
+    const t = (statusTypes ?? []).find((t) => t.id === activeStatusTypeId);
+    return t ? new Set(t.statuses.map((s) => s.id)) : new Set<string>();
+  }, [statusTypes, activeStatusTypeId]);
   const hostRef = useRef<HTMLDivElement>(null); // holds the injected <svg>
   const containerRef = useRef<HTMLDivElement>(null);
   const svgElRef = useRef<SVGSVGElement | null>(null);
@@ -317,8 +326,11 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       const [cx, cy] = b.centroid;
       const a = b.number ? assignments?.[b.number] : undefined;
 
-      // status fill
-      const col = a?.statusId ? statusColor.get(a.statusId) : undefined;
+      // status fill (respecting the active highlight lens, if any)
+      const col =
+        a?.statusId && (!activeStatusIds || activeStatusIds.has(a.statusId))
+          ? statusColor.get(a.statusId)
+          : undefined;
       if (col) {
         const poly = document.createElementNS(NS, "polygon");
         poly.setAttribute("points", b.polygon.map((p) => p.join(",")).join(" "));
@@ -373,7 +385,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
 
     svg.insertBefore(statusG, svg.firstChild); // fills under the line work
     svg.appendChild(labelG); // labels on top
-  }, [world, booths, assignments, statusColor]);
+  }, [world, booths, assignments, statusColor, activeStatusIds]);
 
   // Reflect the selected booth onto the hit layer.
   useEffect(() => {

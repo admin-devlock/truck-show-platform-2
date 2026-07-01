@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   saveStatusTypes,
+  setActiveStatusType,
   getBoothDataOnce,
   subscribeMaps,
   type StatusType,
@@ -109,6 +110,20 @@ export function StatusManager({
     }
   };
 
+  // Save the current edits and make this the map's active highlight lens, then close
+  // so the booths colour by this status type.
+  const highlight = async (t: StatusType) => {
+    setBusy(true);
+    try {
+      await saveStatusTypes(mapId, types);
+      await setActiveStatusType(mapId, t.id);
+      onClose();
+    } catch (e) {
+      setBusy(false);
+      alert("Couldn’t highlight: " + e);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
       <div className="card w-full max-w-lg p-6 max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
@@ -139,6 +154,18 @@ export function StatusManager({
                   onChange={(e) => renameType(ti, e.target.value)}
                   className="flex-1 font-medium text-sm border-b border-transparent hover:border-[color:var(--color-line)] focus:border-[color:var(--color-accent)] outline-none py-1"
                 />
+                <button
+                  onClick={() => highlight(t)}
+                  disabled={busy || t.statuses.length === 0}
+                  title="Colour the booths on the map by this status type"
+                  className="text-xs text-[color:var(--color-accent)] hover:underline disabled:opacity-40 disabled:no-underline flex items-center gap-1"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                  </svg>
+                  Highlight on map
+                </button>
                 <button
                   onClick={() => removeType(ti)}
                   className="text-xs text-[color:var(--color-ink-soft)] hover:text-[#c5221f]"
