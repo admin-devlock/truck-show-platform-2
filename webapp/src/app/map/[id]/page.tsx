@@ -361,6 +361,7 @@ function Viewer({ id }: { id: string }) {
             mapId={id}
             levelId={activeLevel.id}
             boothNumbers={boothNumbers}
+            assignments={boothData.assignments}
             onClose={() => setShowImport(false)}
           />
         )}
@@ -378,7 +379,8 @@ function Viewer({ id }: { id: string }) {
           <StatusManager
             mapId={id}
             statusTypes={boothData.statusTypes}
-            activeStatusTypeId={showSearch ? null : boothData.activeStatusTypeId}
+            activeStatusTypeId={boothData.activeStatusTypeId}
+            assignments={boothData.assignments}
             onClose={() => setShowStatuses(false)}
           />
         )}

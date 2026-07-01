@@ -8,7 +8,9 @@ import {
   getLevelsOnce,
   type MapDoc,
   type Level,
+  type BoothAssignment,
 } from "@/lib/maps";
+import { ConfirmDialog, OverwriteGlyph } from "./ConfirmDialog";
 
 /**
  * Two ways to fill in exhibitor names in bulk:
@@ -20,11 +22,13 @@ export function ExhibitorImportDialog({
   mapId,
   levelId,
   boothNumbers,
+  assignments,
   onClose,
 }: {
   mapId: string;
   levelId: string;
   boothNumbers: string[];
+  assignments: Record<string, BoothAssignment>;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"paste" | "copy">("paste");
@@ -52,9 +56,9 @@ export function ExhibitorImportDialog({
         </div>
 
         {tab === "paste" ? (
-          <PasteTab mapId={mapId} levelId={levelId} numberSet={numberSet} onClose={onClose} />
+          <PasteTab mapId={mapId} levelId={levelId} numberSet={numberSet} assignments={assignments} onClose={onClose} />
         ) : (
-          <CopyTab mapId={mapId} levelId={levelId} onClose={onClose} />
+          <CopyTab mapId={mapId} levelId={levelId} assignments={assignments} onClose={onClose} />
         )}
       </div>
     </div>
@@ -85,24 +89,31 @@ function PasteTab({
   mapId,
   levelId,
   numberSet,
+  assignments,
   onClose,
 }: {
   mapId: string;
   levelId: string;
   numberSet: Set<string>;
+  assignments: Record<string, BoothAssignment>;
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed = useMemo(() => parseRows(text), [text]);
   const entries = Object.entries(parsed);
   const matched = entries.filter(([num]) => numberSet.has(num)).length;
   const unmatched = entries.length - matched;
+  // Booths that already have a DIFFERENT exhibitor name this import would overwrite.
+  const overwrites = entries.filter(([num, name]) => {
+    const cur = assignments[num]?.exhibitor?.trim();
+    return cur && cur !== name.trim();
+  }).length;
 
-  const apply = async () => {
-    if (!entries.length) return;
+  const doImport = async () => {
     setBusy(true);
     try {
       await importExhibitors(mapId, levelId, parsed);
@@ -111,6 +122,11 @@ function PasteTab({
       setBusy(false);
       alert("Import failed: " + e);
     }
+  };
+  const apply = () => {
+    if (!entries.length) return;
+    if (overwrites > 0) setConfirm(true);
+    else doImport();
   };
 
   return (
@@ -159,17 +175,48 @@ function PasteTab({
           {busy ? "Importing…" : `Import ${entries.length || ""} names`}
         </button>
       </div>
+
+      {confirm && (
+        <ConfirmDialog
+          title="Overwrite existing exhibitors?"
+          message={
+            <>
+              {overwrites} booth{overwrites === 1 ? "" : "s"} already {overwrites === 1 ? "has" : "have"} a
+              different exhibitor name that this import will overwrite. This can’t be undone.
+            </>
+          }
+          confirmLabel="Slide to import"
+          busyLabel="Importing…"
+          icon={<OverwriteGlyph />}
+          onConfirm={async () => {
+            await importExhibitors(mapId, levelId, parsed);
+            onClose();
+          }}
+          onClose={() => setConfirm(false)}
+        />
+      )}
     </>
   );
 }
 
-function CopyTab({ mapId, levelId, onClose }: { mapId: string; levelId: string; onClose: () => void }) {
+function CopyTab({
+  mapId,
+  levelId,
+  assignments,
+  onClose,
+}: {
+  mapId: string;
+  levelId: string;
+  assignments: Record<string, BoothAssignment>;
+  onClose: () => void;
+}) {
   const [maps, setMaps] = useState<MapDoc[]>([]);
   const [sourceId, setSourceId] = useState("");
   const [sourceLevels, setSourceLevels] = useState<Level[]>([]);
   const [sourceLevelId, setSourceLevelId] = useState("");
   const [includeStatuses, setIncludeStatuses] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
 
   useEffect(() => subscribeMaps((m) => setMaps(m.filter((x) => x.id !== mapId))), [mapId]);
 
@@ -190,18 +237,27 @@ function CopyTab({ mapId, levelId, onClose }: { mapId: string; levelId: string; 
     };
   }, [sourceId, maps]);
 
-  const copy = async () => {
-    if (!sourceId || !sourceLevelId) return;
+  const existingNames = Object.values(assignments).filter((a) => a.exhibitor?.trim()).length;
+
+  const runCopy = async () => {
+    const n = await copyAssignmentsFromMap(mapId, levelId, sourceId, sourceLevelId, includeStatuses);
+    onClose();
+    setTimeout(() => alert(`Copied ${n} assignment${n === 1 ? "" : "s"}.`), 0);
+  };
+  const doCopy = async () => {
     setBusy(true);
     try {
-      const n = await copyAssignmentsFromMap(mapId, levelId, sourceId, sourceLevelId, includeStatuses);
-      onClose();
-      // tiny confirmation, since the dialog closes
-      setTimeout(() => alert(`Copied ${n} assignment${n === 1 ? "" : "s"}.`), 0);
+      await runCopy();
     } catch (e) {
       setBusy(false);
       alert("Copy failed: " + e);
     }
+  };
+  // Confirm when copying could overwrite existing names or replace the status types.
+  const copy = () => {
+    if (!sourceId || !sourceLevelId) return;
+    if (existingNames > 0 || includeStatuses) setConfirm(true);
+    else doCopy();
   };
 
   return (
@@ -258,6 +314,28 @@ function CopyTab({ mapId, levelId, onClose }: { mapId: string; levelId: string; 
           {busy ? "Copying…" : "Copy"}
         </button>
       </div>
+
+      {confirm && (
+        <ConfirmDialog
+          title="Overwrite existing data?"
+          message={
+            <>
+              This copies over matching booths
+              {existingNames > 0 && (
+                <>
+                  , overwriting {existingNames} existing exhibitor name{existingNames === 1 ? "" : "s"}
+                </>
+              )}
+              {includeStatuses && <> and replaces this map’s status types</>}. This can’t be undone.
+            </>
+          }
+          confirmLabel="Slide to copy"
+          busyLabel="Copying…"
+          icon={<OverwriteGlyph />}
+          onConfirm={runCopy}
+          onClose={() => setConfirm(false)}
+        />
+      )}
     </>
   );
 }

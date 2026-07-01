@@ -8,8 +8,10 @@ import {
   subscribeMaps,
   type StatusType,
   type BoothStatus,
+  type BoothAssignment,
   type MapDoc,
 } from "@/lib/maps";
+import { ConfirmDialog, OverwriteGlyph } from "./ConfirmDialog";
 
 const PALETTE = [
   "#1e8e3e", "#188038", "#1a73e8", "#e37400", "#f9ab00",
@@ -21,11 +23,13 @@ export function StatusManager({
   mapId,
   statusTypes,
   activeStatusTypeId,
+  assignments,
   onClose,
 }: {
   mapId: string;
   statusTypes: StatusType[];
   activeStatusTypeId: string | null;
+  assignments: Record<string, BoothAssignment>;
   onClose: () => void;
 }) {
   const [types, setTypes] = useState<StatusType[]>(() =>
@@ -106,25 +110,41 @@ export function StatusManager({
     }
   };
 
-  const save = async () => {
+  const [confirm, setConfirm] = useState<{ names: string[]; count: number } | null>(null);
+
+  const persist = async () => {
+    await saveStatusTypes(mapId, types);
+    // Persist which type's colours are shown (guard against a shown type that was removed).
+    const validShown = types.some((t) => t.id === shownId) ? shownId : null;
+    await setActiveStatusType(mapId, validShown);
+  };
+  const doSave = async () => {
     setBusy(true);
     try {
-      await saveStatusTypes(mapId, types);
-      // Persist which type's colours are shown (one at a time). Guard against a shown
-      // type that was removed during editing.
-      const validShown = types.some((t) => t.id === shownId) ? shownId : null;
-      await setActiveStatusType(mapId, validShown);
+      await persist();
       onClose();
     } catch (e) {
       setBusy(false);
       alert("Couldn’t save: " + e);
     }
   };
+  // Guard: if statuses that booths are currently using were removed, confirm the loss.
+  const save = () => {
+    const editedIds = new Set(types.flatMap((t) => t.statuses.map((s) => s.id)));
+    const removed = statusTypes.flatMap((t) => t.statuses).filter((s) => !editedIds.has(s.id));
+    const removedIds = new Set(removed.map((s) => s.id));
+    const count = removed.length
+      ? Object.values(assignments).filter((a) => a.statusId && removedIds.has(a.statusId)).length
+      : 0;
+    if (count > 0) setConfirm({ names: removed.map((s) => s.name), count });
+    else doSave();
+  };
 
   // Single-select: showing one type's colours unselects any other.
   const toggleShown = (id: string) => setShownId((cur) => (cur === id ? null : id));
 
   return (
+    <>
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
       <div className="card w-full max-w-lg p-6 max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-medium mb-5">Status types</h2>
@@ -271,5 +291,28 @@ export function StatusManager({
         </div>
       </div>
     </div>
+
+    {confirm && (
+      <ConfirmDialog
+        title="Remove statuses in use?"
+        message={
+          <>
+            {confirm.names.join(", ")} {confirm.names.length === 1 ? "is" : "are"} used by{" "}
+            {confirm.count} booth{confirm.count === 1 ? "" : "s"} on this level. Removing{" "}
+            {confirm.names.length === 1 ? "it" : "them"} clears those booths’ status — this can’t
+            be undone.
+          </>
+        }
+        confirmLabel="Slide to remove"
+        busyLabel="Saving…"
+        icon={<OverwriteGlyph />}
+        onConfirm={async () => {
+          await persist();
+          onClose();
+        }}
+        onClose={() => setConfirm(null)}
+      />
+    )}
+    </>
   );
 }

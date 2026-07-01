@@ -8,6 +8,7 @@ import {
   type Level,
   type MapDoc,
 } from "@/lib/maps";
+import { ConfirmDialog, OverwriteGlyph } from "./ConfirmDialog";
 
 /**
  * Level switcher. Collapsed it's a compact bar showing the active level + actions;
@@ -227,6 +228,8 @@ function LevelActions({
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(level.name);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => setName(level.name), [level.name]);
 
@@ -287,15 +290,9 @@ function LevelActions({
             </button>
             {canRemove && (
               <button
-                onClick={async () => {
+                onClick={() => {
                   setMenu(false);
-                  if (confirm(`Remove level “${level.name}”? Its floorplan and assignments will be deleted.`)) {
-                    try {
-                      await removeLevel(map, level.id);
-                    } catch (e) {
-                      alert(String(e instanceof Error ? e.message : e));
-                    }
-                  }
+                  setConfirmRemove(true);
                 }}
                 className="w-full text-left px-3 py-1.5 hover:bg-[#f1f3f4] text-[#c5221f]"
               >
@@ -310,19 +307,53 @@ function LevelActions({
         type="file"
         accept=".dwg,.dxf"
         className="hidden"
-        onChange={async (e) => {
+        onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) {
-            try {
-              await replaceLevelCad(map, level.id, f);
-              onSwitched(level.id);
-            } catch (err) {
-              alert("Couldn’t replace CAD: " + err);
-            }
-          }
+          if (f) setPendingFile(f);
           e.target.value = "";
         }}
       />
+
+      {confirmRemove && (
+        <ConfirmDialog
+          title="Remove level"
+          message={
+            <>
+              “{level.name}” — its floorplan and all exhibitor/status assignments will be
+              permanently deleted. This can’t be undone.
+            </>
+          }
+          confirmLabel="Slide to remove"
+          busyLabel="Removing…"
+          onConfirm={async () => {
+            await removeLevel(map, level.id);
+            setConfirmRemove(false);
+          }}
+          onClose={() => setConfirmRemove(false)}
+        />
+      )}
+
+      {pendingFile && (
+        <ConfirmDialog
+          title="Replace this level’s CAD?"
+          message={
+            <>
+              “{pendingFile.name}” will replace the floorplan for “{level.name}”. Exhibitor and
+              status assignments are kept where booth numbers still match; any on booths that
+              disappear are lost. This can’t be undone.
+            </>
+          }
+          confirmLabel="Slide to replace"
+          busyLabel="Replacing…"
+          icon={<OverwriteGlyph />}
+          onConfirm={async () => {
+            await replaceLevelCad(map, level.id, pendingFile);
+            setPendingFile(null);
+            onSwitched(level.id);
+          }}
+          onClose={() => setPendingFile(null)}
+        />
+      )}
     </div>
   );
 }

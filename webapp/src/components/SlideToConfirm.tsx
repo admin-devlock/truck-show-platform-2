@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 /**
  * Slide-to-confirm control. The user drags the handle to the far end to confirm a
@@ -15,11 +15,13 @@ export function SlideToConfirm({
   label = "Slide to confirm",
   busy = false,
   busyLabel = "Working…",
+  icon,
 }: {
   onConfirm: () => void;
   label?: string;
   busy?: boolean;
   busyLabel?: string;
+  icon?: ReactNode; // handle glyph (defaults to a trash icon)
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [x, setX] = useState(0);
@@ -104,7 +106,7 @@ export function SlideToConfirm({
         ) : done ? (
           <CheckGlyph />
         ) : (
-          <TrashGlyph />
+          icon ?? <TrashGlyph />
         )}
       </div>
     </div>
