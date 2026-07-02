@@ -27,6 +27,9 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  // Bumped when onConfirm fails: remounts the slider (via key) so it un-latches from
+  // its completed state and the user can retry instead of hitting a dead control.
+  const [attempt, setAttempt] = useState(0);
 
   const run = async () => {
     setBusy(true);
@@ -34,6 +37,7 @@ export function ConfirmDialog({
       await onConfirm();
     } catch (e) {
       setBusy(false);
+      setAttempt((a) => a + 1);
       alert(String(e instanceof Error ? e.message : e));
     }
   };
@@ -44,7 +48,7 @@ export function ConfirmDialog({
         <h2 className="text-lg font-medium mb-1">{title}</h2>
         <div className="text-sm text-[color:var(--color-ink-soft)] mb-5 leading-relaxed">{message}</div>
 
-        <SlideToConfirm onConfirm={run} busy={busy} label={confirmLabel} busyLabel={busyLabel} icon={icon} />
+        <SlideToConfirm key={attempt} onConfirm={run} busy={busy} label={confirmLabel} busyLabel={busyLabel} icon={icon} />
 
         <div className="flex justify-end mt-5">
           <button onClick={onClose} disabled={busy} className="btn btn-ghost">

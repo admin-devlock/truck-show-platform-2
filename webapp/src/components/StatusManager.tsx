@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   saveStatusTypes,
   setActiveStatusType,
@@ -35,6 +35,10 @@ export function StatusManager({
   const [types, setTypes] = useState<StatusType[]>(() =>
     JSON.parse(JSON.stringify(statusTypes)),
   );
+  // What existed when the dialog opened — used to tell "a collaborator added this while
+  // I had the dialog open" (merge it back in on save) from "I deleted this" (drop it).
+  const mountTypeIds = useRef(new Set(statusTypes.map((t) => t.id)));
+  const mountStatusIds = useRef(new Set(statusTypes.flatMap((t) => t.statuses.map((s) => s.id))));
   // Which status type's colours are shown on the map — one at a time (or none).
   const [shownId, setShownId] = useState<string | null>(activeStatusTypeId);
   const [busy, setBusy] = useState(false);
@@ -94,7 +98,12 @@ export function StatusManager({
     try {
       const { statusTypes: src } = await getBoothDataOnce(sourceId);
       const have = new Set(types.map((t) => t.name.trim().toLowerCase()));
-      const incoming = src.filter((t) => !have.has(t.name.trim().toLowerCase()));
+      // Skip ids we already have too: duplicated/restored maps keep their type ids, so
+      // re-copying after a rename would otherwise append a duplicate-id type.
+      const haveIds = new Set(types.map((t) => t.id));
+      const incoming = src.filter(
+        (t) => !have.has(t.name.trim().toLowerCase()) && !haveIds.has(t.id),
+      );
       if (incoming.length) update([...types, ...JSON.parse(JSON.stringify(incoming))]);
       setCopyNote(
         incoming.length
@@ -112,10 +121,33 @@ export function StatusManager({
 
   const [confirm, setConfirm] = useState<{ names: string[]; count: number } | null>(null);
 
+  // Saving writes the whole array, but `types` is a snapshot from when the dialog
+  // opened — a collaborator may have added types/statuses since. Merge those additions
+  // back in (anything live that wasn't there at mount and that we didn't add ourselves)
+  // so saving doesn't silently delete their work. Their edits to items we ALSO touched
+  // still lose to ours — acceptable last-write-wins for concurrent edits of one item.
+  const withRemoteAdds = (): StatusType[] => {
+    const localTypeIds = new Set(types.map((t) => t.id));
+    const merged = types.map((t) => {
+      const live = statusTypes.find((x) => x.id === t.id);
+      if (!live) return t;
+      const localStatusIds = new Set(t.statuses.map((s) => s.id));
+      const adds = live.statuses.filter(
+        (s) => !mountStatusIds.current.has(s.id) && !localStatusIds.has(s.id),
+      );
+      return adds.length ? { ...t, statuses: [...t.statuses, ...adds] } : t;
+    });
+    const typeAdds = statusTypes.filter(
+      (t) => !mountTypeIds.current.has(t.id) && !localTypeIds.has(t.id),
+    );
+    return [...merged, ...typeAdds];
+  };
+
   const persist = async () => {
-    await saveStatusTypes(mapId, types);
+    const finalTypes = withRemoteAdds();
+    await saveStatusTypes(mapId, finalTypes);
     // Persist which type's colours are shown (guard against a shown type that was removed).
-    const validShown = types.some((t) => t.id === shownId) ? shownId : null;
+    const validShown = finalTypes.some((t) => t.id === shownId) ? shownId : null;
     await setActiveStatusType(mapId, validShown);
   };
   const doSave = async () => {
@@ -130,8 +162,8 @@ export function StatusManager({
   };
   // Guard: if statuses that booths are currently using were removed, confirm the loss.
   const save = () => {
-    const editedIds = new Set(types.flatMap((t) => t.statuses.map((s) => s.id)));
-    const removed = statusTypes.flatMap((t) => t.statuses).filter((s) => !editedIds.has(s.id));
+    const keptIds = new Set(withRemoteAdds().flatMap((t) => t.statuses.map((s) => s.id)));
+    const removed = statusTypes.flatMap((t) => t.statuses).filter((s) => !keptIds.has(s.id));
     const removedIds = new Set(removed.map((s) => s.id));
     const count = removed.length
       ? Object.values(assignments).filter((a) => a.statusId && removedIds.has(a.statusId)).length

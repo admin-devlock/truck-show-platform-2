@@ -32,7 +32,10 @@ export function NewLevelDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
+      onClick={busy ? undefined : onClose} // match the disabled Cancel — no mid-add dismissal
+    >
       <div className="card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-medium mb-4">Add a level</h2>
 

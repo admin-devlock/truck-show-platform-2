@@ -254,13 +254,18 @@ function Viewer({ id }: { id: string }) {
   const searchBooths = useMemo<SearchBooth[]>(() => {
     const out: SearchBooth[] = [];
     for (const lvl of levels) {
-      const lb = lvl.id === activeLevel?.id ? booths ?? [] : levelBooths[lvl.id] ?? [];
+      // Splits are map-wide, so apply them to every level's list (not just the active
+      // one) — a split booth on another level must search/export as its two halves.
+      const lb =
+        lvl.id === activeLevel?.id
+          ? booths ?? []
+          : applyBoothSplits(levelBooths[lvl.id], boothData.splits) ?? [];
       lb.forEach((booth, i) =>
         out.push({ booth, levelId: lvl.id, levelName: lvl.name, levelIndex: i }),
       );
     }
     return out;
-  }, [levels, activeLevel?.id, booths, levelBooths]);
+  }, [levels, activeLevel?.id, booths, levelBooths, boothData.splits]);
 
   const boothNumbers = useMemo(
     () => Array.from(new Set(searchBooths.map((s) => s.booth.number).filter((n): n is string => !!n))),
@@ -269,10 +274,26 @@ function Viewer({ id }: { id: string }) {
   // Every booth across the map (all levels) — for map-wide status counts in the legend.
   const allBooths = useMemo(() => searchBooths.map((s) => s.booth), [searchBooths]);
 
+  // Safety net for the map-wide model: assignments are keyed by booth number, which is
+  // assumed unique across levels. If a venue's CADs ever violate that, warn instead of
+  // silently sharing one exhibitor/status between same-numbered booths on two levels.
+  const numberCollisions = useMemo(() => {
+    const seenOn = new Map<string, string>();
+    const collided = new Set<string>();
+    for (const sb of searchBooths) {
+      const n = sb.booth.number;
+      if (!n) continue;
+      const lvl = seenOn.get(n);
+      if (lvl && lvl !== sb.levelId) collided.add(n);
+      else seenOn.set(n, sb.levelId);
+    }
+    return collided;
+  }, [searchBooths]);
+
   // Cross-level search pick: after switching to another level, focus the booth once its
   // render has actually loaded. Gate on `renderLevel` (not `activeLevel`) so we don't act
   // on the previous level's still-mounted booths during the switch.
-  const [pendingFocus, setPendingFocus] = useState<{ levelId: string; number: string | null } | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<{ levelId: string; number: string } | null>(null);
   useEffect(() => {
     if (!pendingFocus || renderLevel !== pendingFocus.levelId || !booths) return;
     const i = booths.findIndex((b) => b.number === pendingFocus.number);
@@ -394,6 +415,13 @@ function Viewer({ id }: { id: string }) {
             onClose={() => setSelected(null)}
           />
         )}
+        {numberCollisions.size > 0 && (
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 rounded-md border border-[#f9ab00] bg-[#fef7e0] px-3 py-2 text-xs text-[#7a4f01] shadow-sm">
+            {numberCollisions.size} booth number{numberCollisions.size === 1 ? "" : "s"} (e.g.{" "}
+            {[...numberCollisions][0]}) appear{numberCollisions.size === 1 ? "s" : ""} on more than
+            one level — those booths share one exhibitor/status assignment.
+          </div>
+        )}
         {!showSearch && activeStatusType && allBooths.length > 0 && (
           <StatusLegend
             type={activeStatusType}
@@ -430,8 +458,9 @@ function Viewer({ id }: { id: string }) {
                 setSelected(sb.levelIndex);
                 panzoomRef.current?.focusBooth(sb.levelIndex);
               } else {
-                // jump to the booth's level, then focus once it renders
-                setPendingFocus({ levelId: sb.levelId, number: sb.booth.number });
+                // Jump to the booth's level, then focus once it renders. Unnumbered
+                // booths can't be found by number on arrival — just switch levels.
+                if (sb.booth.number) setPendingFocus({ levelId: sb.levelId, number: sb.booth.number });
                 setActiveLevelId(sb.levelId);
               }
             }}
@@ -458,7 +487,8 @@ function Viewer({ id }: { id: string }) {
           <ExportDialog
             map={map}
             getSvg={() => panzoomRef.current?.getExportSvg() ?? null}
-            booths={booths ?? []}
+            csvRows={searchBooths}
+            multiLevel={levels.length > 1}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
             onClose={() => setShowExport(false)}
@@ -508,7 +538,11 @@ function Viewer({ id }: { id: string }) {
 function EditableTitle({ id, title, canEdit }: { id: string; title: string; canEdit: boolean }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(title);
-  useEffect(() => setVal(title), [title]);
+  // Track remote renames — but never clobber a draft the user is mid-typing.
+  useEffect(() => {
+    if (!editing) setVal(title);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title]);
 
   if (!canEdit) return <span className="text-sm font-medium truncate">{title}</span>;
 
@@ -519,7 +553,8 @@ function EditableTitle({ id, title, canEdit }: { id: string; title: string; canE
       onChange={(e) => setVal(e.target.value)}
       onBlur={() => {
         setEditing(false);
-        if (val.trim() && val !== title) renameMap(id, val.trim());
+        if (val.trim() && val !== title)
+          renameMap(id, val.trim()).catch((e) => alert("Couldn’t rename: " + e));
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();

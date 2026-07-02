@@ -255,6 +255,9 @@ export async function splitBooth(
   parts: SplitPart[],
   currentAssignment?: BoothAssignment,
 ) {
+  if (parts.length < 2) throw new Error("A split needs at least two parts.");
+  if (new Set(parts.map((p) => p.number)).size !== parts.length)
+    throw new Error("Split part numbers must differ.");
   const update: Record<string, unknown> = {
     [`splits.${sourceNumber}`]: { parts },
   };

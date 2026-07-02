@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { Booth } from "./PanZoom";
 import type { BoothAssignment, StatusType, MapDoc } from "@/lib/maps";
 import {
   downloadBlob,
@@ -9,6 +8,7 @@ import {
   svgToPngBlob,
   svgToPdfBlob,
   boothsToCsv,
+  type CsvBoothRow,
 } from "@/lib/export";
 import { downloadMapBackup } from "@/lib/backup";
 
@@ -18,21 +18,23 @@ const FORMATS: { id: Fmt; label: string; desc: string }[] = [
   { id: "png", label: "PNG image", desc: "Floorplan picture, as currently shown" },
   { id: "svg", label: "SVG vector", desc: "Scalable floorplan, editable in design tools" },
   { id: "pdf", label: "PDF", desc: "Single-page document, good for printing" },
-  { id: "csv", label: "CSV data", desc: "Booth, exhibitor, status & dimensions table" },
+  { id: "csv", label: "CSV data", desc: "Booth, exhibitor, status & dimensions — every level" },
 ];
 
 /** Download the map "as depicted right now" in a chosen format. */
 export function ExportDialog({
   map,
   getSvg,
-  booths,
+  csvRows,
+  multiLevel,
   assignments,
   statusTypes,
   onClose,
 }: {
   map: MapDoc;
   getSvg: () => string | null;
-  booths: Booth[];
+  csvRows: CsvBoothRow[]; // every level's booths — the CSV spans the whole map
+  multiLevel: boolean;
   assignments: Record<string, BoothAssignment>;
   statusTypes: StatusType[];
   onClose: () => void;
@@ -46,7 +48,7 @@ export function ExportDialog({
     setBusy(fmt);
     try {
       if (fmt === "csv") {
-        const csv = boothsToCsv(booths, assignments, statusTypes);
+        const csv = boothsToCsv(csvRows, assignments, statusTypes, multiLevel);
         // Prepend a UTF-8 BOM so Excel reads non-ASCII (e.g. the m² header, accented
         // exhibitor names) correctly instead of as mojibake.
         downloadBlob(

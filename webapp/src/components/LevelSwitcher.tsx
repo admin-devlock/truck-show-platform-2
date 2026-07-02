@@ -139,8 +139,12 @@ function LevelDeck({
           className="relative rounded-md bg-[color:var(--color-canvas)]"
           style={{ height: 380, perspective: "1500px", perspectiveOrigin: "50% 28%" }}
         >
+          {/* With many levels the fan would climb out of the 380px stage and cover the
+              header — compress the spread so the rearmost card still fits. Unchanged
+              for ≤3 levels (170/2 > SPREAD). */}
           {ordered.map((lvl, p) => {
-            const dy = -(p * SPREAD);
+            const spread = Math.min(SPREAD, 170 / Math.max(1, ordered.length - 1));
+            const dy = -(p * spread);
             const dz = -(p * 60);
             const rot = p === 0 ? 0 : TILT;
             const scale = 1 - p * 0.04;
@@ -204,8 +208,12 @@ function LevelDeck({
 }
 
 function LevelThumb({ level }: { level: Level }) {
+  /* eslint-disable @next/next/no-img-element */
   if (level.svgUrl) return <img src={level.svgUrl} alt="" />;
-  if (level.thumbSvg) return <div dangerouslySetInnerHTML={{ __html: level.thumbSvg }} />;
+  // <img>, not inline HTML: thumbSvg can come from a user-supplied backup restore,
+  // and img-embedded SVG never executes scripts or event handlers.
+  if (level.thumbSvg)
+    return <img src={`data:image/svg+xml;utf8,${encodeURIComponent(level.thumbSvg)}`} alt="" />;
   return (
     <div className="w-full h-full grid place-items-center text-xs text-[color:var(--color-ink-soft)] bg-[#fbfbfa]">
       {level.status === "processing" ? "Rendering…" : level.status === "error" ? "Failed" : "No preview"}
@@ -231,11 +239,16 @@ function LevelActions({
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => setName(level.name), [level.name]);
+  // Track remote renames — but never clobber a draft the user is mid-typing.
+  useEffect(() => {
+    if (!renaming) setName(level.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level.name]);
 
   const commitRename = () => {
     setRenaming(false);
-    if (name.trim() && name.trim() !== level.name) renameLevel(map.id, level.id, name.trim());
+    if (name.trim() && name.trim() !== level.name)
+      renameLevel(map.id, level.id, name.trim()).catch((e) => alert("Couldn’t rename: " + e));
   };
 
   if (renaming) {

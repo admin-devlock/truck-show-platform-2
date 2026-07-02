@@ -59,7 +59,9 @@ export function BoothInfoPanel({
     if (!booth.number || !booth.polygon?.length) return;
     const poly = booth.polygon as Pt[];
     const [pa, pb] = splitPolygon(poly, dir);
+    // Reject degenerate clips (a sliver or nothing on one side).
     if (pa.length < 3 || pb.length < 3) return;
+    if (Math.abs(polygonArea(pa)) < 1e-6 || Math.abs(polygonArea(pb)) < 1e-6) return;
     const origArea = polygonArea(poly) || 1;
     const { minx, maxx, miny, maxy } = bbox(poly);
     const useX = dir === "vertical" || (dir === "auto" && maxx - minx >= maxy - miny);
@@ -73,6 +75,10 @@ export function BoothInfoPanel({
     });
     const a = (numA.trim() || `${booth.number}A`);
     const b = (numB.trim() || `${booth.number}B`);
+    if (a === b) {
+      alert("The two booth numbers must differ.");
+      return;
+    }
     await splitBooth(mapId, booth.number, [mk(pa, a), mk(pb, b)], assignment);
     onClose();
   };

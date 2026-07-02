@@ -165,10 +165,14 @@ function csvCell(v: string | number | null | undefined): string {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/** A booth row for the CSV, tagged with the level it lives on. */
+export type CsvBoothRow = { booth: Booth; levelName: string };
+
 export function boothsToCsv(
-  booths: Booth[],
+  rows_: CsvBoothRow[],
   assignments: Record<string, BoothAssignment>,
   statusTypes: StatusType[],
+  multiLevel: boolean,
 ): string {
   // statusId -> status name
   const statusName = new Map<string, string>();
@@ -176,6 +180,7 @@ export function boothsToCsv(
 
   const header = [
     "Booth",
+    ...(multiLevel ? ["Level"] : []),
     "Exhibitor",
     ...statusTypes.map((t) => t.name),
     "Width (m)",
@@ -185,7 +190,7 @@ export function boothsToCsv(
   ];
   const rows = [header.map(csvCell).join(",")];
 
-  for (const b of booths) {
+  for (const { booth: b, levelName } of rows_) {
     const a = b.number ? assignments[b.number] : undefined;
     const chosen = a?.statusId ? statusName.get(a.statusId) ?? "" : "";
     // We only track one status per booth; show it under whichever type owns it.
@@ -195,6 +200,7 @@ export function boothsToCsv(
     rows.push(
       [
         csvCell(b.number),
+        ...(multiLevel ? [csvCell(levelName)] : []),
         csvCell(a?.exhibitor ?? ""),
         ...statusCols.map(csvCell),
         csvCell(b.width_m),

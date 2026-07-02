@@ -64,6 +64,7 @@ export function SignInGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 
   async function go() {
+    if (busy) return; // Enter key isn't gated by the button's disabled state
     setBusy(true);
     try {
       await signInAsGuest(guestName);
