@@ -71,7 +71,9 @@ raw = re.sub(r"(?<=[ ,\[:])-?nan(?=[, \]\n])", "NaN", raw)
 raw = re.sub(r"(?<=[ ,\[:])(-?)inf(?=[, \]\n])", r"\1Infinity", raw)
 doc = json.loads(raw)
 del raw
-objs = doc["OBJECTS"]
+objs = doc.get("OBJECTS")
+if not objs:
+    sys.exit("dwgread output has no OBJECTS — corrupt or unsupported DWG")
 
 layers = {o["handle"][-1]: o.get("name", "?") for o in objs if o.get("object") == "LAYER"}
 by_owner = defaultdict(list)
@@ -111,6 +113,11 @@ def make_T(parent_T, ins, scale, rot):
     return T
 
 def add_seg(group, p, q, min_len=0.0):
+    # Drop non-finite coords at this choke point (all drawing geometry flows through
+    # here): one NaN vertex would otherwise poison the frame/viewBox and make the
+    # booths JSON emit bare NaN, which the route's strict JSON.parse rejects.
+    if not all(math.isfinite(v) for v in (p[0], p[1], q[0], q[1])):
+        return
     if min_len:
         d2 = (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2
         if d2 < min_len * min_len or d2 > VENUE_MAX_LEN * VENUE_MAX_LEN:

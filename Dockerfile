@@ -84,7 +84,10 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/scripts ./scripts
 
 # Backups are written here at runtime — mount a volume to persist them.
-RUN mkdir -p /app/backups
+RUN mkdir -p /app/backups && chown -R node:node /app/backups
+
+# Don't parse untrusted CAD input as root: dwgread is a C parser fed user uploads.
+USER node
 
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

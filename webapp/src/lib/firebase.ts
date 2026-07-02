@@ -15,6 +15,20 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+// NEXT_PUBLIC_* values are inlined at BUILD time — a docker build that misses a
+// --build-arg otherwise fails only at first sign-in with an opaque error. Fail loudly.
+{
+  const missing = Object.entries(firebaseConfig)
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+  if (missing.length) {
+    throw new Error(
+      `Firebase config incomplete — missing ${missing.join(", ")}. ` +
+        "Set the NEXT_PUBLIC_FIREBASE_* env vars (or docker build args) and rebuild.",
+    );
+  }
+}
+
 const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);

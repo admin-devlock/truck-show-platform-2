@@ -12,18 +12,25 @@ export const runtime = "nodejs";
 
 const BACKUP_DIR = join(process.cwd(), "backups");
 const HISTORY_KEEP = 10;
+const MAX_BACKUP_BYTES = 25 * 1024 * 1024; // renders embedded as strings; real backups are ~1-2MB
 
-function safeId(id: string) {
-  return id.replace(/[^a-zA-Z0-9_-]/g, "");
+// Firestore auto-ids are 20 chars of this alphabet. Requiring that shape means callers
+// must already KNOW a map id (they're unguessable) — junk/short ids are rejected.
+function safeId(id: string): string | null {
+  return /^[a-zA-Z0-9_-]{15,40}$/.test(id) ? id : null;
 }
 
 export async function POST(req: Request) {
   try {
-    const { mapId, backup } = await req.json();
-    if (!mapId || !backup) {
+    const raw = await req.text();
+    if (raw.length > MAX_BACKUP_BYTES) {
+      return NextResponse.json({ error: "backup too large" }, { status: 413 });
+    }
+    const { mapId, backup } = JSON.parse(raw);
+    const id = mapId ? safeId(String(mapId)) : null;
+    if (!id || !backup) {
       return NextResponse.json({ error: "mapId and backup are required" }, { status: 400 });
     }
-    const id = safeId(String(mapId));
     const dir = join(BACKUP_DIR, id);
     await mkdir(dir, { recursive: true });
     const json = JSON.stringify(backup);
@@ -41,21 +48,21 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: true, savedAt: new Date().toISOString() });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    console.error("backup save failed:", e);
+    return NextResponse.json({ error: "backup failed" }, { status: 500 }); // no path/stack leak
   }
 }
 
 export async function GET(req: Request) {
   const mapId = new URL(req.url).searchParams.get("mapId");
   try {
-    if (mapId) {
-      const file = join(BACKUP_DIR, safeId(mapId), "latest.json");
-      const text = await readFile(file, "utf8");
-      return new NextResponse(text, { headers: { "content-type": "application/json" } });
-    }
-    const dirs = await readdir(BACKUP_DIR).catch(() => [] as string[]);
-    return NextResponse.json({ maps: dirs });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 404 });
+    // Recovery read requires a full map id — there is deliberately NO listing endpoint
+    // (that would let anyone enumerate every map's id and download its data).
+    const id = mapId ? safeId(mapId) : null;
+    if (!id) return NextResponse.json({ error: "mapId is required" }, { status: 400 });
+    const text = await readFile(join(BACKUP_DIR, id, "latest.json"), "utf8");
+    return new NextResponse(text, { headers: { "content-type": "application/json" } });
+  } catch {
+    return NextResponse.json({ error: "no backup for that map" }, { status: 404 });
   }
 }

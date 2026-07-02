@@ -40,13 +40,32 @@ function run(cmd: string, args: string[], timeoutMs = 280_000): Promise<string> 
   });
 }
 
+// Guard rails: conversions burn real CPU (dwgread + python for up to minutes), so cap
+// upload size and how many can run at once — otherwise the route is a DoS primitive.
+const MAX_DWG_BYTES = 100 * 1024 * 1024; // largest real venue file so far is ~20MB
+const MAX_CONCURRENT = 2;
+let inFlight = 0;
+
 export async function POST(req: Request) {
   let dir: string | null = null;
+  let counted = false;
   try {
+    if (inFlight >= MAX_CONCURRENT) {
+      return NextResponse.json(
+        { error: "Converter is busy — try again in a moment." },
+        { status: 429 },
+      );
+    }
+    inFlight++;
+    counted = true;
+
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+    if (file.size > MAX_DWG_BYTES) {
+      return NextResponse.json({ error: "File too large (100MB max)." }, { status: 413 });
     }
     const name = file.name.toLowerCase();
     if (!name.endsWith(".dwg")) {
@@ -91,8 +110,10 @@ export async function POST(req: Request) {
       summary,
     });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    console.error("convert failed:", e); // full detail server-side only
+    return NextResponse.json({ error: "Conversion failed — is this a valid DWG?" }, { status: 500 });
   } finally {
+    if (counted) inFlight--;
     // best-effort cleanup: remove the whole temp working dir (files + directory).
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

@@ -12,23 +12,33 @@ service cloud.firestore {
     match /maps/{mapId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+      // Full updates + delete are owner-only, but any collaborator may bump updatedAt
+      // (level add/replace touches it).
+      allow update: if signedIn() &&
+        (resource.data.ownerId == request.auth.uid ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt']));
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
 
       match /presence/{uid} {
         allow read: if signedIn();
         allow write: if signedIn() && uid == request.auth.uid;
       }
 
-      // Rendered floorplan (SVG + booth data). Readable by collaborators; written by
-      // the map owner (the conversion step runs client-side as the owner).
-      match /render/{docId} {
-        allow read: if signedIn();
-        allow write: if signedIn() &&
-          get(/databases/$(database)/documents/maps/$(mapId)).data.ownerId == request.auth.uid;
+      // A map's CAD levels — collaborative: any signed-in user can add/rename/replace
+      // levels (the level UI has no owner gate). Without this block every map view
+      // fails: subscribeLevels reads this subcollection on open.
+      match /levels/{levelId} {
+        allow read, write: if signedIn();
       }
 
-      // Booth management (exhibitor names + statuses) is collaborative — any signed-in
-      // user can read and edit it.
+      // Rendered floorplan (SVG + booth data). Written by whoever ran the conversion —
+      // any collaborator can add/replace a level, so writes are not owner-only.
+      match /render/{docId} {
+        allow read, write: if signedIn();
+      }
+
+      // Booth management (exhibitor names + statuses + shared search state) is
+      // collaborative — any signed-in user can read and edit it.
       match /meta/{docId} {
         allow read, write: if signedIn();
       }
