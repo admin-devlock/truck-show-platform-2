@@ -39,6 +39,9 @@ export function StatusManager({
   // I had the dialog open" (merge it back in on save) from "I deleted this" (drop it).
   const mountTypeIds = useRef(new Set(statusTypes.map((t) => t.id)));
   const mountStatusIds = useRef(new Set(statusTypes.flatMap((t) => t.statuses.map((s) => s.id))));
+  // Unsaved edits? Then clicking the backdrop must NOT dismiss — Cancel or Save only.
+  const initialTypesJson = useRef(JSON.stringify(statusTypes));
+  const dirty = JSON.stringify(types) !== initialTypesJson.current;
   // Which status type's colours are shown on the map — one at a time (or none).
   const [shownId, setShownId] = useState<string | null>(activeStatusTypeId);
   const [busy, setBusy] = useState(false);
@@ -183,7 +186,10 @@ export function StatusManager({
 
   return (
     <>
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
+      onClick={dirty || busy ? undefined : onClose}
+    >
       <div className="card w-full max-w-lg p-6 max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-medium mb-5">Status types</h2>
 

@@ -12,12 +12,11 @@ service cloud.firestore {
     match /maps/{mapId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      // Full updates + delete are owner-only, but any collaborator may bump updatedAt
-      // (level add/replace touches it).
-      allow update: if signedIn() &&
-        (resource.data.ownerId == request.auth.uid ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt']));
-      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+      // Open trusted workspace: every signed-in user can edit and delete any map (the
+      // whole map is collaboratively editable anyway, and maps created in dev guest
+      // mode have owner ids no Google account can match). Tighten when a real
+      // members/sharing model lands.
+      allow update, delete: if signedIn();
 
       match /presence/{uid} {
         allow read: if signedIn();

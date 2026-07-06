@@ -187,9 +187,10 @@ export async function deleteMap(id: string) {
       await deleteDoc(d.ref).catch(() => {});
     }
   }
-  // The default level's render + booth meta.
+  // The default level's render + booth meta + shared search state.
   await deleteDoc(doc(db, "maps", id, "render", DEFAULT_LEVEL_ID)).catch(() => {});
   await deleteDoc(boothMeta(id)).catch(() => {});
+  await deleteDoc(doc(db, "maps", id, "meta", "search")).catch(() => {});
   await deleteDoc(doc(db, "maps", id));
 }
 

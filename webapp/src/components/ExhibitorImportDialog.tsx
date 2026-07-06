@@ -28,10 +28,16 @@ export function ExhibitorImportDialog({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"paste" | "copy">("paste");
+  // Pasted rows / a picked source map are unsaved input — clicking the backdrop must
+  // not throw them away; dismiss via Cancel (or by completing the import).
+  const [dirty, setDirty] = useState(false);
   const numberSet = useMemo(() => new Set(boothNumbers), [boothNumbers]);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
+      onClick={dirty ? undefined : onClose}
+    >
       <div className="card w-full max-w-lg p-6 max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-medium mb-4">Import exhibitors</h2>
 
@@ -52,9 +58,9 @@ export function ExhibitorImportDialog({
         </div>
 
         {tab === "paste" ? (
-          <PasteTab mapId={mapId} numberSet={numberSet} assignments={assignments} onClose={onClose} />
+          <PasteTab mapId={mapId} numberSet={numberSet} assignments={assignments} onDirty={setDirty} onClose={onClose} />
         ) : (
-          <CopyTab mapId={mapId} assignments={assignments} onClose={onClose} />
+          <CopyTab mapId={mapId} assignments={assignments} onDirty={setDirty} onClose={onClose} />
         )}
       </div>
     </div>
@@ -85,17 +91,23 @@ function PasteTab({
   mapId,
   numberSet,
   assignments,
+  onDirty,
   onClose,
 }: {
   mapId: string;
   numberSet: Set<string>;
   assignments: Record<string, BoothAssignment>;
+  onDirty: (dirty: boolean) => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    onDirty(text.trim().length > 0);
+    return () => onDirty(false); // tab switch discards the input anyway
+  }, [text, onDirty]);
 
   const parsed = useMemo(() => parseRows(text), [text]);
   const entries = Object.entries(parsed);
@@ -196,10 +208,12 @@ function PasteTab({
 function CopyTab({
   mapId,
   assignments,
+  onDirty,
   onClose,
 }: {
   mapId: string;
   assignments: Record<string, BoothAssignment>;
+  onDirty: (dirty: boolean) => void;
   onClose: () => void;
 }) {
   const [maps, setMaps] = useState<MapDoc[]>([]);
@@ -209,6 +223,10 @@ function CopyTab({
   const [confirm, setConfirm] = useState(false);
 
   useEffect(() => subscribeMaps((m) => setMaps(m.filter((x) => x.id !== mapId))), [mapId]);
+  useEffect(() => {
+    onDirty(!!sourceId || includeStatuses);
+    return () => onDirty(false);
+  }, [sourceId, includeStatuses, onDirty]);
 
   const existingNames = Object.values(assignments).filter((a) => a.exhibitor?.trim()).length;
 
