@@ -172,8 +172,14 @@ export function StatusManager({
     else doSave();
   };
 
-  // Single-select: showing one type's colours unselects any other.
-  const toggleShown = (id: string) => setShownId((cur) => (cur === id ? null : id));
+  // Single-select: showing one type's colours unselects any other. Applies LIVE —
+  // the map lens changes immediately, no Save needed. (A brand-new type still needs
+  // Save first: until its statuses exist in Firestore the lens has nothing to colour.)
+  const toggleShown = (id: string) => {
+    const next = shownId === id ? null : id;
+    setShownId(next);
+    void setActiveStatusType(mapId, next).catch(() => {});
+  };
 
   return (
     <>
