@@ -75,36 +75,16 @@ const CW = 0.62; // approx glyph width / font size, for fitting text into booths
 // lines (booth number above, metric below). It grows to nearly fill its booth —
 // bounded by booth width, booth height, and a real-world cap (MAX_LABEL_M) so the text
 // plateaus and stays a small part of a big booth while filling a small one.
+// Booth-label sizing. Every line (booth number / exhibitor / metric) is sized
+// INDEPENDENTLY: its own width fit plus a real-world cap — so a short booth number
+// stays big even when a long exhibitor name has to shrink to fit a narrow booth.
+// The whole block is then scaled down together only if it overflows the booth height.
 const LABEL_W_FILL = 0.9; // fraction of booth width one line may span
 const LABEL_H_FILL = 0.86; // fraction of booth height the whole block may span
-const SUB_RATIO = 0.6; // secondary line size relative to the primary line
-// Assigned booths (number + name + metric): the number/metric lines grow closer to the
-// name's size, filling the booth rather than shrinking to fine print.
-const SUB_RATIO_ASSIGNED = 0.78;
-const GAP_RATIO = 0.16; // gap between lines, relative to the primary line
+const SUB_CAP = 0.85; // sub lines' real-world cap relative to the primary's cap
+const GAP_RATIO = 0.16; // gap between lines, relative to the block's biggest line
 const MAX_LABEL_M = 2.2; // cap a primary line at ~2.2 m of drawing units (the "limit")
-const MIN_LABEL_M = 0.18; // skip labels that would be smaller than this (illegible)
-
-/** Largest primary-line font that fits the booth (width + height + real-world cap).
- *  `secondaryLens` are the char-lengths of the smaller lines (0 = line absent), sized
- *  at `subRatio` of the primary; unitsPerM = 0 disables the real-world cap. */
-function fitLabelFont(
-  bw: number,
-  bh: number,
-  unitsPerM: number,
-  primaryLen: number,
-  secondaryLens: number[] = [],
-  subRatio: number = SUB_RATIO,
-): number {
-  const subs = secondaryLens.filter((l) => l > 0);
-  const blockFactor = 1 + subs.length * (GAP_RATIO + subRatio);
-  let f = (bh * LABEL_H_FILL) / blockFactor; // height of the whole block
-  f = Math.min(f, (bw * LABEL_W_FILL) / (Math.max(primaryLen, 1) * CW)); // primary width
-  const maxSub = subs.length ? Math.max(...subs) : 0;
-  if (maxSub > 0) f = Math.min(f, (bw * LABEL_W_FILL) / (maxSub * CW * subRatio)); // sub width
-  if (unitsPerM > 0) f = Math.min(f, MAX_LABEL_M * unitsPerM); // real-world cap
-  return f;
-}
+const MIN_LABEL_M = 0.18; // drop lines that would be smaller than this (illegible)
 
 /** Imperative handle so search (and other UI) can drive the camera to a booth. */
 export type PanZoomHandle = {
@@ -370,47 +350,50 @@ export const PanZoom = forwardRef<PanZoomHandle, {
         b.width_m != null && b.depth_m != null ? `${round1(b.width_m)} × ${round1(b.depth_m)}` : "";
       const areaTxt = b.area_m2 != null ? `${round1(b.area_m2)} m²` : "";
       const metric = a?.labelMode === "dims" ? dims || areaTxt : areaTxt || dims;
+      // Build the line list (top to bottom), then size each line independently:
+      // own width fit + real-world cap. A long name shrinking to fit a narrow booth
+      // no longer drags the (short) number and metric down with it.
+      type LabelLine = { text: string; cap: number; fill: string; weight?: string; min: number };
+      const lines: LabelLine[] = [];
       if (exhibitor) {
-        // exhibitor name is the big (primary, bold) line; the booth number sits above
-        // it and the metric below — all three in black, subs near the name's size.
-        const showNum = !!b.number;
-        const fName = fitLabelFont(
-          bw,
-          bh,
-          unitsPerM,
-          exhibitor.length,
-          [showNum ? b.number!.length : 0, metric.length],
-          SUB_RATIO_ASSIGNED,
-        );
-        if (fName < minFont) return;
-        const fSub = fName * SUB_RATIO_ASSIGNED;
-        const subOk = fSub >= minFont * 0.7; // too tiny to read → name only
-        const withNum = showNum && subOk;
-        const withMetric = !!metric && subOk;
-        const gap = fName * GAP_RATIO;
-        const block = fName + (withNum ? fSub + gap : 0) + (withMetric ? fSub + gap : 0);
-        let y = cy - block / 2;
-        if (withNum) {
-          labelG.appendChild(txt(cx, y + fSub / 2, fSub, "#202124", b.number!));
-          y += fSub + gap;
-        }
-        labelG.appendChild(txt(cx, y + fName / 2, fName, "#202124", exhibitor, "600"));
-        y += fName + gap;
-        if (withMetric) labelG.appendChild(txt(cx, y + fSub / 2, fSub, "#202124", metric));
+        if (b.number)
+          lines.push({ text: b.number, cap: SUB_CAP, fill: "#202124", weight: "600", min: minFont * 0.7 });
+        lines.push({ text: exhibitor, cap: 1, fill: "#202124", weight: "600", min: minFont });
+        if (metric) lines.push({ text: metric, cap: SUB_CAP, fill: "#202124", min: minFont * 0.7 });
       } else if (b.number) {
-        // booth number is the big (primary) line; the metric sits small below it
-        const fN = fitLabelFont(bw, bh, unitsPerM, b.number.length, [metric.length]);
-        if (fN < minFont) return;
-        const fD = metric ? fN * SUB_RATIO : 0;
-        if (metric && fD >= minFont * 0.7) {
-          const gap = fN * GAP_RATIO;
-          const block = fN + gap + fD;
-          labelG.appendChild(txt(cx, cy - block / 2 + fN / 2, fN, "#0f3d8a", b.number));
-          labelG.appendChild(txt(cx, cy + block / 2 - fD / 2, fD, "#202124", metric));
-        } else {
-          labelG.appendChild(txt(cx, cy, fN, "#0f3d8a", b.number));
-        }
+        lines.push({ text: b.number, cap: 1, fill: "#0f3d8a", weight: "600", min: minFont });
+        if (metric) lines.push({ text: metric, cap: SUB_CAP, fill: "#202124", min: minFont * 0.7 });
       }
+      if (!lines.length) return;
+
+      const fontFor = (L: LabelLine) => {
+        let f = (bw * LABEL_W_FILL) / (Math.max(L.text.length, 1) * CW);
+        if (unitsPerM > 0) f = Math.min(f, MAX_LABEL_M * unitsPerM * L.cap);
+        return f;
+      };
+      // Scale the block to the height budget; drop lines that end up illegible and
+      // refit (freed height goes back to the survivors). ≤3 lines → ≤3 passes.
+      let kept = lines;
+      let fonts: number[] = [];
+      let gap = 0;
+      for (let pass = 0; pass < 3; pass++) {
+        const raw = kept.map(fontFor);
+        const g0 = GAP_RATIO * Math.max(...raw);
+        const total = raw.reduce((s, f) => s + f, 0) + g0 * (kept.length - 1);
+        const scale = Math.min(1, (bh * LABEL_H_FILL) / total);
+        fonts = raw.map((f) => f * scale);
+        gap = g0 * scale;
+        const survivors = kept.filter((L, i) => fonts[i] >= L.min);
+        if (!survivors.length) return; // nothing legible fits this booth
+        if (survivors.length === kept.length) break;
+        kept = survivors;
+      }
+      const block = fonts.reduce((s, f) => s + f, 0) + gap * (kept.length - 1);
+      let y = cy - block / 2;
+      kept.forEach((L, i) => {
+        labelG.appendChild(txt(cx, y + fonts[i] / 2, fonts[i], L.fill, L.text, L.weight));
+        y += fonts[i] + gap;
+      });
     });
 
     svg.insertBefore(statusG, svg.firstChild); // fills under the line work
