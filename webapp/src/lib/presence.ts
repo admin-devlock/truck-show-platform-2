@@ -77,7 +77,7 @@ export function usePresence(mapId: string | null, me: Identity | null) {
           lastActive: serverTimestamp(),
         },
         { merge: true }, // preserve live cursor fields written between heartbeats
-      );
+      ).catch(() => {}); // e.g. guest personas are denied under prod rules — presence is best-effort
 
     write();
     const beat = setInterval(write, 10_000);

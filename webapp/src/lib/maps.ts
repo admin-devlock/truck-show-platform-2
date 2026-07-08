@@ -204,7 +204,13 @@ export async function deleteMap(id: string) {
 // ---------------------------------------------------------------------------
 export type BoothStatus = { id: string; name: string; color: string };
 export type StatusType = { id: string; name: string; statuses: BoothStatus[] };
-export type BoothAssignment = { exhibitor?: string; statusId?: string | null };
+export type BoothAssignment = {
+  exhibitor?: string;
+  statusId?: string | null;
+  // What the small metric line on the booth's map label shows: its area (default)
+  // or its width × depth. Absent = "area".
+  labelMode?: "area" | "dims";
+};
 
 // Adaptability: a booth can be split in half in-app (e.g. it was subdivided after the
 // CAD was drawn). A split replaces the source booth with two independently-assignable
@@ -284,6 +290,11 @@ export async function setBoothExhibitor(id: string, boothNumber: string, exhibit
 
 export async function setBoothStatus(id: string, boothNumber: string, statusId: string | null) {
   await setDoc(boothMeta(id), { assignments: { [boothNumber]: { statusId } } }, { merge: true });
+}
+
+/** Per-booth label metric: show area (m², the default) or width × depth on the map. */
+export async function setBoothLabelMode(id: string, boothNumber: string, labelMode: "area" | "dims") {
+  await setDoc(boothMeta(id), { assignments: { [boothNumber]: { labelMode } } }, { merge: true });
 }
 
 export async function saveStatusTypes(id: string, statusTypes: StatusType[]) {

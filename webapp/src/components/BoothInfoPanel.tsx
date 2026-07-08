@@ -5,6 +5,7 @@ import type { Booth } from "./PanZoom";
 import {
   setBoothExhibitor,
   setBoothStatus,
+  setBoothLabelMode,
   splitBooth,
   unsplitBooth,
   type BoothAssignment,
@@ -121,6 +122,37 @@ export function BoothInfoPanel({
         <dl className="space-y-2 mb-4">
           <Row label="Dimensions" value={`${booth.width_m} × ${booth.depth_m} m`} />
           <Row label="Area" value={`${booth.area_m2} m²`} />
+          {canAssign && booth.width_m != null && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-xs text-[color:var(--color-ink-soft)]">Label shows</dt>
+              <dd>
+                <div className="flex rounded-md border border-[color:var(--color-line)] overflow-hidden text-xs">
+                  {(
+                    [
+                      ["area", "m²"],
+                      ["dims", "w × d"],
+                    ] as const
+                  ).map(([mode, label]) => {
+                    const active = (assignment?.labelMode ?? "area") === mode;
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => void setBoothLabelMode(mapId, booth.number!, mode)}
+                        aria-pressed={active}
+                        className={`px-2 py-0.5 ${
+                          active
+                            ? "bg-[color:var(--color-accent)] text-white"
+                            : "text-[color:var(--color-ink-soft)] hover:bg-[#f1f3f4]"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </dd>
+            </div>
+          )}
         </dl>
       )}
 
