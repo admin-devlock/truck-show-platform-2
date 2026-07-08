@@ -85,6 +85,58 @@ const SUB_CAP = 0.85; // sub lines' real-world cap relative to the primary's cap
 const GAP_RATIO = 0.16; // gap between lines, relative to the block's biggest line
 const MAX_LABEL_M = 2.2; // cap a primary line at ~2.2 m of drawing units (the "limit")
 const MIN_LABEL_M = 0.18; // drop lines that would be smaller than this (illegible)
+// Multi-word names may wrap onto up to MAX_NAME_ROWS rows when that makes the font
+// meaningfully bigger (≥ WRAP_GAIN×) — a long name in a narrow booth stacks instead
+// of shrinking. Rows of one wrapped name sit closer together than separate lines.
+const MAX_NAME_ROWS = 3;
+const WRAP_GAIN = 1.2;
+const ROW_GAP_RATIO = 0.1;
+
+/** Split `words` into `k` rows (order kept) minimising the longest row. Tiny inputs —
+ *  exhaustive recursion is fine. */
+function balancedSplit(words: string[], k: number): string[] {
+  let best: string[] = [words.join(" ")];
+  let bestMax = Infinity;
+  const rec = (start: number, left: number, acc: string[]) => {
+    if (left === 1) {
+      const rows = [...acc, words.slice(start).join(" ")];
+      const m = Math.max(...rows.map((r) => r.length));
+      if (m < bestMax) {
+        bestMax = m;
+        best = rows;
+      }
+      return;
+    }
+    for (let end = start + 1; end <= words.length - (left - 1); end++) {
+      rec(end, left - 1, [...acc, words.slice(start, end).join(" ")]);
+    }
+  };
+  rec(0, k, []);
+  return best;
+}
+
+/** Best row split for a name: wrap onto more rows only while each step grows the
+ *  achievable font by ≥ WRAP_GAIN (capped fonts never "gain", so wide booths where the
+ *  name already hits the real-world cap stay on one line). */
+function bestNameRows(name: string, bw: number, unitsPerM: number): string[] {
+  const words = name.split(/\s+/).filter(Boolean);
+  const fontFor = (longest: number) => {
+    let f = (bw * LABEL_W_FILL) / (Math.max(longest, 1) * CW);
+    if (unitsPerM > 0) f = Math.min(f, MAX_LABEL_M * unitsPerM);
+    return f;
+  };
+  let rows = [name];
+  let font = fontFor(name.length);
+  for (let k = 2; k <= Math.min(MAX_NAME_ROWS, words.length); k++) {
+    const candidate = balancedSplit(words, k);
+    const f = fontFor(Math.max(...candidate.map((r) => r.length)));
+    if (f >= font * WRAP_GAIN) {
+      rows = candidate;
+      font = f;
+    } else break;
+  }
+  return rows;
+}
 
 /** Imperative handle so search (and other UI) can drive the camera to a booth. */
 export type PanZoomHandle = {
@@ -352,25 +404,35 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       const metric = a?.labelMode === "dims" ? dims || areaTxt : areaTxt || dims;
       // Build the line list (top to bottom), then size each line independently:
       // own width fit + real-world cap. A long name shrinking to fit a narrow booth
-      // no longer drags the (short) number and metric down with it.
-      type LabelLine = { text: string; cap: number; fill: string; weight?: string; min: number };
+      // no longer drags the (short) number and metric down with it. A line can span
+      // several ROWS (a wrapped multi-word name) sharing one font.
+      type LabelLine = { rows: string[]; cap: number; fill: string; weight?: string; min: number };
       const lines: LabelLine[] = [];
       if (exhibitor) {
         if (b.number)
-          lines.push({ text: b.number, cap: SUB_CAP, fill: "#202124", weight: "600", min: minFont * 0.7 });
-        lines.push({ text: exhibitor, cap: 1, fill: "#202124", weight: "600", min: minFont });
-        if (metric) lines.push({ text: metric, cap: SUB_CAP, fill: "#202124", min: minFont * 0.7 });
+          lines.push({ rows: [b.number], cap: SUB_CAP, fill: "#202124", weight: "600", min: minFont * 0.7 });
+        lines.push({
+          rows: bestNameRows(exhibitor, bw, unitsPerM),
+          cap: 1,
+          fill: "#202124",
+          weight: "600",
+          min: minFont,
+        });
+        if (metric) lines.push({ rows: [metric], cap: SUB_CAP, fill: "#202124", min: minFont * 0.7 });
       } else if (b.number) {
-        lines.push({ text: b.number, cap: 1, fill: "#0f3d8a", weight: "600", min: minFont });
-        if (metric) lines.push({ text: metric, cap: SUB_CAP, fill: "#202124", min: minFont * 0.7 });
+        lines.push({ rows: [b.number], cap: 1, fill: "#0f3d8a", weight: "600", min: minFont });
+        if (metric) lines.push({ rows: [metric], cap: SUB_CAP, fill: "#202124", min: minFont * 0.7 });
       }
       if (!lines.length) return;
 
       const fontFor = (L: LabelLine) => {
-        let f = (bw * LABEL_W_FILL) / (Math.max(L.text.length, 1) * CW);
+        const longest = Math.max(...L.rows.map((r) => r.length), 1);
+        let f = (bw * LABEL_W_FILL) / (longest * CW);
         if (unitsPerM > 0) f = Math.min(f, MAX_LABEL_M * unitsPerM * L.cap);
         return f;
       };
+      const heightOf = (L: LabelLine, f: number) =>
+        L.rows.length * f + (L.rows.length - 1) * ROW_GAP_RATIO * f;
       // Scale the block to the height budget; drop lines that end up illegible and
       // refit (freed height goes back to the survivors). ≤3 lines → ≤3 passes.
       let kept = lines;
@@ -379,7 +441,8 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       for (let pass = 0; pass < 3; pass++) {
         const raw = kept.map(fontFor);
         const g0 = GAP_RATIO * Math.max(...raw);
-        const total = raw.reduce((s, f) => s + f, 0) + g0 * (kept.length - 1);
+        const total =
+          kept.reduce((s, L, i) => s + heightOf(L, raw[i]), 0) + g0 * (kept.length - 1);
         const scale = Math.min(1, (bh * LABEL_H_FILL) / total);
         fonts = raw.map((f) => f * scale);
         gap = g0 * scale;
@@ -388,11 +451,16 @@ export const PanZoom = forwardRef<PanZoomHandle, {
         if (survivors.length === kept.length) break;
         kept = survivors;
       }
-      const block = fonts.reduce((s, f) => s + f, 0) + gap * (kept.length - 1);
+      const block =
+        kept.reduce((s, L, i) => s + heightOf(L, fonts[i]), 0) + gap * (kept.length - 1);
       let y = cy - block / 2;
       kept.forEach((L, i) => {
-        labelG.appendChild(txt(cx, y + fonts[i] / 2, fonts[i], L.fill, L.text, L.weight));
-        y += fonts[i] + gap;
+        const f = fonts[i];
+        for (const row of L.rows) {
+          labelG.appendChild(txt(cx, y + f / 2, f, L.fill, row, L.weight));
+          y += f + ROW_GAP_RATIO * f;
+        }
+        y += gap - ROW_GAP_RATIO * f; // swap the row gap after the last row for the line gap
       });
     });
 
