@@ -13,6 +13,7 @@ import {
   type SplitPart,
 } from "@/lib/maps";
 import { splitPolygon, polygonArea, centroid, bbox, type Pt } from "@/lib/geometry";
+import { boothShape } from "@/lib/booths";
 
 /* Slide-in panel: selected booth details + editable exhibitor name and status. */
 export function BoothInfoPanel({
@@ -120,9 +121,14 @@ export function BoothInfoPanel({
 
       {booth.area_m2 != null && (
         <dl className="space-y-2 mb-4">
-          <Row label="Dimensions" value={`${booth.width_m} × ${booth.depth_m} m`} />
+          <Row
+            label="Dimensions"
+            value={`${booth.width_m} × ${booth.depth_m} m${
+              boothShape(booth) ? ` (${boothShape(booth)})` : ""
+            }`}
+          />
           <Row label="Area" value={`${booth.area_m2} m²`} />
-          {canAssign && booth.width_m != null && (
+          {canAssign && booth.width_m != null && !booth.irregular && (
             <div className="flex items-center justify-between gap-3">
               <dt className="text-xs text-[color:var(--color-ink-soft)]">Label shows</dt>
               <dd>

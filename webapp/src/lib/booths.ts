@@ -4,6 +4,28 @@
 import type { Booth } from "@/components/PanZoom";
 import type { BoothSplit } from "@/lib/maps";
 
+/**
+ * Human word for a non-rectangular booth's footprint, or null for rectangles.
+ * A rectilinear polygon with exactly 6 corners is always an L-shape (e.g. a corner
+ * booth with a cut-out); anything else irregular gets the generic word. For these
+ * booths a single "w × d" can't describe the outline — callers should qualify it.
+ */
+export function boothShape(b: Booth): "L-shaped" | "irregular" | null {
+  if (!b.irregular) return null;
+  const pts = b.polygon ?? [];
+  const n = pts.length;
+  if (n < 3) return "irregular";
+  let corners = 0;
+  for (let i = 0; i < n; i++) {
+    const [ax, ay] = pts[(i + n - 1) % n];
+    const [bx, by] = pts[i];
+    const [cx, cy] = pts[(i + 1) % n];
+    // count only real corners — CAD polygons sometimes carry collinear midpoints
+    if (Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) > 1e3) corners++;
+  }
+  return corners === 6 ? "L-shaped" : "irregular";
+}
+
 export function applyBoothSplits(
   booths: Booth[] | undefined,
   splits: Record<string, BoothSplit>,

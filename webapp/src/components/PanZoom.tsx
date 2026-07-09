@@ -397,11 +397,13 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       const exhibitor = a?.exhibitor?.trim();
       // The small metric line: the booth's area (default) or its dimensions —
       // a per-booth choice synced via the assignment. Falls back to whichever
-      // representation the booth actually has.
+      // representation the booth actually has. Irregular (e.g. L-shaped) booths
+      // always show their true polygon area: a single "w × d" misdescribes them.
       const dims =
         b.width_m != null && b.depth_m != null ? `${round1(b.width_m)} × ${round1(b.depth_m)}` : "";
       const areaTxt = b.area_m2 != null ? `${round1(b.area_m2)} m²` : "";
-      const metric = a?.labelMode === "dims" ? dims || areaTxt : areaTxt || dims;
+      const metric =
+        b.irregular || a?.labelMode !== "dims" ? areaTxt || dims : dims || areaTxt;
       // Build the line list (top to bottom), then size each line independently:
       // own width fit + real-world cap. A long name shrinking to fit a narrow booth
       // no longer drags the (short) number and metric down with it. A line can span
