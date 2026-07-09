@@ -406,22 +406,26 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       // own width fit + real-world cap. A long name shrinking to fit a narrow booth
       // no longer drags the (short) number and metric down with it. A line can span
       // several ROWS (a wrapped multi-word name) sharing one font.
-      type LabelLine = { rows: string[]; cap: number; fill: string; weight?: string; min: number };
+      // `pri` is the sacrifice order when the booth is too small for everything:
+      // metric (0) goes first, then the name (1); the booth NUMBER (2) is identity —
+      // it is never dropped while anything else remains.
+      type LabelLine = { rows: string[]; cap: number; fill: string; weight?: string; min: number; pri: number };
       const lines: LabelLine[] = [];
       if (exhibitor) {
         if (b.number)
-          lines.push({ rows: [b.number], cap: SUB_CAP, fill: "#202124", weight: "600", min: minFont * 0.7 });
+          lines.push({ rows: [b.number], cap: SUB_CAP, fill: "#202124", weight: "600", min: minFont * 0.7, pri: 2 });
         lines.push({
           rows: bestNameRows(exhibitor, bw, unitsPerM),
           cap: 1,
           fill: "#202124",
           weight: "600",
           min: minFont,
+          pri: 1,
         });
-        if (metric) lines.push({ rows: [metric], cap: SUB_CAP, fill: "#202124", min: minFont * 0.7 });
+        if (metric) lines.push({ rows: [metric], cap: SUB_CAP, fill: "#202124", min: minFont * 0.7, pri: 0 });
       } else if (b.number) {
-        lines.push({ rows: [b.number], cap: 1, fill: "#0f3d8a", weight: "600", min: minFont });
-        if (metric) lines.push({ rows: [metric], cap: SUB_CAP, fill: "#202124", min: minFont * 0.7 });
+        lines.push({ rows: [b.number], cap: 1, fill: "#0f3d8a", weight: "600", min: minFont, pri: 2 });
+        if (metric) lines.push({ rows: [metric], cap: SUB_CAP, fill: "#202124", min: minFont * 0.7, pri: 0 });
       }
       if (!lines.length) return;
 
@@ -433,12 +437,14 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       };
       const heightOf = (L: LabelLine, f: number) =>
         L.rows.length * f + (L.rows.length - 1) * ROW_GAP_RATIO * f;
-      // Scale the block to the height budget; drop lines that end up illegible and
-      // refit (freed height goes back to the survivors). ≤3 lines → ≤3 passes.
+      // Scale the block to the height budget. While anything is illegible, sacrifice
+      // the LOWEST-priority line (metric → name → number-last) and refit — the freed
+      // height goes back to what remains, so the booth number survives whenever it
+      // alone would fit. ≤3 lines → the loop runs at most 3 times.
       let kept = lines;
       let fonts: number[] = [];
       let gap = 0;
-      for (let pass = 0; pass < 3; pass++) {
+      for (;;) {
         const raw = kept.map(fontFor);
         const g0 = GAP_RATIO * Math.max(...raw);
         const total =
@@ -446,10 +452,10 @@ export const PanZoom = forwardRef<PanZoomHandle, {
         const scale = Math.min(1, (bh * LABEL_H_FILL) / total);
         fonts = raw.map((f) => f * scale);
         gap = g0 * scale;
-        const survivors = kept.filter((L, i) => fonts[i] >= L.min);
-        if (!survivors.length) return; // nothing legible fits this booth
-        if (survivors.length === kept.length) break;
-        kept = survivors;
+        if (kept.every((L, i) => fonts[i] >= L.min)) break;
+        if (kept.length === 1) return; // even alone it can't be legible — no label
+        const sacrifice = kept.reduce((lo, L) => (L.pri < lo.pri ? L : lo), kept[0]);
+        kept = kept.filter((L) => L !== sacrifice);
       }
       const block =
         kept.reduce((s, L, i) => s + heightOf(L, fonts[i]), 0) + gap * (kept.length - 1);
