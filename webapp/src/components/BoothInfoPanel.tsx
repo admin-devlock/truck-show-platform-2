@@ -6,6 +6,7 @@ import {
   setBoothExhibitor,
   setBoothStatus,
   setBoothLabelMode,
+  setBoothKind,
   splitBooth,
   unsplitBooth,
   type BoothAssignment,
@@ -13,25 +14,32 @@ import {
   type SplitPart,
 } from "@/lib/maps";
 import { splitPolygon, polygonArea, centroid, bbox, type Pt } from "@/lib/geometry";
-import { boothShape } from "@/lib/booths";
+import { boothShape, boothKindLabel } from "@/lib/booths";
 
 /* Slide-in panel: selected booth details + editable exhibitor name and status. */
 export function BoothInfoPanel({
   mapId,
+  levelId,
+  kindEditable,
   booth,
   assignment,
   statusTypes,
   onClose,
 }: {
   mapId: string;
+  levelId: string;
+  /** Kind lives in the level's render data — sample levels (svgUrl, no render doc)
+   *  can't persist a change, so the toggle is hidden for them. */
+  kindEditable: boolean;
   booth: Booth;
   assignment: BoothAssignment | undefined;
   statusTypes: StatusType[];
   onClose: () => void;
 }) {
-  const kindLabel =
-    booth.kind === "built" ? "Built booth" : booth.kind === "space_only" ? "Space only" : "Label";
+  const kindLabel = boothKindLabel(booth.kind);
   const canAssign = !!booth.number;
+  const kindTogglable =
+    kindEditable && !!booth.number && (booth.kind === "built" || booth.kind === "space_only");
   const [name, setName] = useState(assignment?.exhibitor ?? "");
   useEffect(() => setName(assignment?.exhibitor ?? ""), [assignment?.exhibitor, booth.number]);
 
@@ -121,6 +129,37 @@ export function BoothInfoPanel({
 
       {booth.area_m2 != null && (
         <dl className="space-y-2 mb-4">
+          {kindTogglable && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-xs text-[color:var(--color-ink-soft)]">Type</dt>
+              <dd>
+                <div className="flex rounded-md border border-[color:var(--color-line)] overflow-hidden text-xs">
+                  {(["built", "space_only"] as const).map((k) => {
+                    const activeK = booth.kind === k;
+                    return (
+                      <button
+                        key={k}
+                        onClick={() =>
+                          !activeK &&
+                          setBoothKind(mapId, levelId, booth.number!, k).catch((e) =>
+                            alert("Couldn’t change type: " + e),
+                          )
+                        }
+                        aria-pressed={activeK}
+                        className={`px-2 py-0.5 ${
+                          activeK
+                            ? "bg-[color:var(--color-accent)] text-white"
+                            : "text-[color:var(--color-ink-soft)] hover:bg-[#f1f3f4]"
+                        }`}
+                      >
+                        {boothKindLabel(k)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </dd>
+            </div>
+          )}
           <Row
             label="Dimensions"
             value={`${booth.width_m} × ${booth.depth_m} m${

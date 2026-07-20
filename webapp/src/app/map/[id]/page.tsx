@@ -26,6 +26,7 @@ import {
   getRenderBooths,
   renameMap,
   type MapDoc,
+  type BoothKindFilter,
   type MapRender,
   type BoothData,
   type Level,
@@ -69,7 +70,14 @@ function Viewer({ id }: { id: string }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchView, setSearchView] = useState<"list" | "map">("list");
   const [searchStatusFilter, setSearchStatusFilter] = useState<string[]>([]);
-  type SearchPatch = { query?: string; active?: boolean; view?: "list" | "map"; statusFilter?: string[] };
+  const [searchKindFilter, setSearchKindFilter] = useState<BoothKindFilter[]>([]);
+  type SearchPatch = {
+    query?: string;
+    active?: boolean;
+    view?: "list" | "map";
+    statusFilter?: string[];
+    kindFilter?: BoothKindFilter[];
+  };
   const searchWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSearch = useRef<SearchPatch>({});
   const firstSearchSnapshot = useRef(true);
@@ -88,6 +96,7 @@ function Viewer({ id }: { id: string }) {
       setSearchView(s.view);
       setSearchQuery(s.query);
       setSearchStatusFilter(s.statusFilter);
+      setSearchKindFilter(s.kindFilter);
       if (!s.active) setSearchMatches(null);
     });
   }, [id, identity?.uid]);
@@ -125,6 +134,10 @@ function Viewer({ id }: { id: string }) {
   const onSearchStatusFilter = (statusFilter: string[]) => {
     setSearchStatusFilter(statusFilter);
     pushSearch({ statusFilter });
+  };
+  const onSearchKindFilter = (kindFilter: BoothKindFilter[]) => {
+    setSearchKindFilter(kindFilter);
+    pushSearch({ kindFilter });
   };
   const toggleSearch = () => {
     const next = !showSearch;
@@ -406,9 +419,11 @@ function Viewer({ id }: { id: string }) {
             <Spinner />
           </Centered>
         )}
-        {selectedBooth && (
+        {selectedBooth && activeLevel && (
           <BoothInfoPanel
             mapId={id}
+            levelId={activeLevel.id}
+            kindEditable={!!render}
             booth={selectedBooth}
             assignment={selectedBooth.number ? boothData.assignments[selectedBooth.number] : undefined}
             statusTypes={boothData.statusTypes}
@@ -439,9 +454,11 @@ function Viewer({ id }: { id: string }) {
             query={searchQuery}
             view={searchView}
             statusFilter={searchStatusFilter}
+            kindFilter={searchKindFilter}
             onQueryChange={onSearchQuery}
             onViewChange={onSearchView}
             onStatusFilterChange={onSearchStatusFilter}
+            onKindFilterChange={onSearchKindFilter}
             onResults={(idx) => {
               // Ring only the matches on the CURRENT level (indices into its booth list).
               const cur = new Set<number>();

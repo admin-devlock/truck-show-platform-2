@@ -2,6 +2,7 @@
 // a canvas JPEG (DCTDecode), CSV from the booth records. All "as depicted right now".
 import type { Booth } from "@/components/PanZoom";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
+import { boothKindLabel } from "@/lib/booths";
 
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -206,7 +207,7 @@ export function boothsToCsv(
         csvCell(b.width_m),
         csvCell(b.depth_m),
         csvCell(b.area_m2),
-        csvCell(b.kind),
+        csvCell(boothKindLabel(b.kind)),
       ].join(","),
     );
   }

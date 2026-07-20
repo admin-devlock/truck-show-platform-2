@@ -4,6 +4,20 @@
 import type { Booth } from "@/components/PanZoom";
 import type { BoothSplit } from "@/lib/maps";
 
+/** Client-facing word for a booth's kind ("built" is called a shell booth). */
+export function boothKindLabel(kind: string): string {
+  switch (kind) {
+    case "built":
+      return "Shell";
+    case "space_only":
+      return "Space only";
+    case "split":
+      return "Split booth";
+    default:
+      return "Label";
+  }
+}
+
 /**
  * Human word for a non-rectangular booth's footprint, or null for rectangles.
  * A rectilinear polygon with exactly 6 corners is always an L-shape (e.g. a corner

@@ -13,6 +13,7 @@ import {
   serverTimestamp,
   updateDoc,
   deleteField,
+  runTransaction,
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -297,6 +298,33 @@ export async function setBoothLabelMode(id: string, boothNumber: string, labelMo
   await setDoc(boothMeta(id), { assignments: { [boothNumber]: { labelMode } } }, { merge: true });
 }
 
+/**
+ * Flip a booth between "built" (shell) and "space_only". Unlike assignments, `kind`
+ * lives in the level's CAD-derived render data, so this rewrites that level's
+ * boothsJson — inside a transaction, so two collaborators toggling kinds at the same
+ * time can't clobber each other's edit.
+ */
+export async function setBoothKind(
+  id: string,
+  levelId: string,
+  boothNumber: string,
+  kind: "built" | "space_only",
+) {
+  const ref = doc(db, "maps", id, "render", levelId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error("This level has no floorplan data to edit.");
+    const parsed = JSON.parse((snap.data() as MapRender).boothsJson);
+    const b = (parsed.booths as { number?: string | null; kind?: string }[]).find(
+      (x) => x.number === boothNumber,
+    );
+    if (!b) throw new Error(`Booth ${boothNumber} isn’t in this level’s data.`);
+    if (b.kind === kind) return;
+    b.kind = kind;
+    tx.update(ref, { boothsJson: JSON.stringify(parsed) });
+  });
+}
+
 export async function saveStatusTypes(id: string, statusTypes: StatusType[]) {
   await setDoc(boothMeta(id), { statusTypes }, { merge: true });
 }
@@ -311,11 +339,13 @@ export async function setActiveStatusType(id: string, activeStatusTypeId: string
 // level — stays per-user; matches are computed locally by each viewer for its level.)
 // `by` is the uid of the last writer, so a client ignores the echo of its own writes.
 // ---------------------------------------------------------------------------
+export type BoothKindFilter = "built" | "space_only";
 export type SearchState = {
   query: string;
   active: boolean;
   view: "list" | "map";
   statusFilter: string[]; // statusIds to include; empty = any status
+  kindFilter: BoothKindFilter[]; // booth types to include; empty = both (shell + space)
   by: string;
 };
 const searchDoc = (id: string) => doc(db, "maps", id, "meta", "search");
@@ -328,6 +358,9 @@ export function subscribeSearch(id: string, cb: (s: SearchState) => void) {
       active: d.active ?? false,
       view: d.view ?? "list",
       statusFilter: Array.isArray(d.statusFilter) ? d.statusFilter : [],
+      kindFilter: Array.isArray(d.kindFilter)
+        ? (d.kindFilter.filter((k) => k === "built" || k === "space_only") as BoothKindFilter[])
+        : [],
       by: d.by ?? "",
     });
   });

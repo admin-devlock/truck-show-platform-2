@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import type { Booth } from "./PanZoom";
-import type { BoothAssignment, StatusType } from "@/lib/maps";
+import type { BoothAssignment, StatusType, BoothKindFilter } from "@/lib/maps";
 import { StatusFilterMenu, NO_STATUS_ID } from "./StatusFilterMenu";
 
 /** A booth in the cross-level search index, tagged with the level it lives on. */
@@ -26,9 +26,11 @@ export function SearchPanel({
   query,
   view,
   statusFilter,
+  kindFilter,
   onQueryChange,
   onViewChange,
   onStatusFilterChange,
+  onKindFilterChange,
   onResults,
   onPick,
   onFrameAll,
@@ -41,9 +43,11 @@ export function SearchPanel({
   query: string;
   view: "list" | "map";
   statusFilter: string[];
+  kindFilter: BoothKindFilter[];
   onQueryChange: (q: string) => void;
   onViewChange: (v: "list" | "map") => void;
   onStatusFilterChange: (s: string[]) => void;
+  onKindFilterChange: (k: BoothKindFilter[]) => void;
   onResults: (indices: number[]) => void;
   onPick: (index: number) => void;
   onFrameAll: (indices: number[]) => void;
@@ -53,9 +57,9 @@ export function SearchPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => inputRef.current?.focus(), []);
 
-  const hasStatuses = statusTypes.some((t) => t.statuses.length > 0);
   const filterSet = useMemo(() => new Set(statusFilter), [statusFilter]);
-  const searching = q.trim() !== "" || filterSet.size > 0;
+  const kindSet = useMemo(() => new Set<string>(kindFilter), [kindFilter]);
+  const searching = q.trim() !== "" || filterSet.size > 0 || kindSet.size > 0;
 
   const statusInfo = useMemo(() => {
     const m = new Map<string, { name: string; color: string }>();
@@ -65,7 +69,7 @@ export function SearchPanel({
 
   const matches = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term && filterSet.size === 0) return [] as number[];
+    if (!term && filterSet.size === 0 && kindSet.size === 0) return [] as number[];
     const out: number[] = [];
     booths.forEach((sb, i) => {
       const b = sb.booth;
@@ -76,14 +80,18 @@ export function SearchPanel({
       // Empty filter = all on. Otherwise a booth passes iff its status (or the
       // "no status" category) is among the still-checked ones.
       const statusOk = filterSet.size === 0 || filterSet.has(sid ?? NO_STATUS_ID);
-      if (textOk && statusOk) out.push(i);
+      // Booth type: split halves count as their (shell) parent; label-only records
+      // match neither type, so they drop out once the user narrows by type.
+      const effKind = b.kind === "split" ? "built" : b.kind;
+      const kindOk = kindSet.size === 0 || kindSet.has(effKind);
+      if (textOk && statusOk && kindOk) out.push(i);
     });
     return out.sort((a, b) => {
       const na = booths[a].booth.number ?? "";
       const nb = booths[b].booth.number ?? "";
       return na.localeCompare(nb, undefined, { numeric: true });
     });
-  }, [q, filterSet, booths, assignments]);
+  }, [q, filterSet, kindSet, booths, assignments]);
 
   useEffect(() => {
     onResults(matches);
@@ -112,13 +120,13 @@ export function SearchPanel({
             placeholder="Search exhibitor or booth #"
             className="flex-1 min-w-0 text-sm outline-none bg-transparent"
           />
-          {hasStatuses && (
-            <StatusFilterMenu
-              statusTypes={statusTypes}
-              selected={statusFilter}
-              onChange={onStatusFilterChange}
-            />
-          )}
+          <StatusFilterMenu
+            statusTypes={statusTypes}
+            selected={statusFilter}
+            onChange={onStatusFilterChange}
+            kindSelected={kindFilter}
+            onKindChange={onKindFilterChange}
+          />
           <button
             onClick={onClose}
             aria-label="Close search"
