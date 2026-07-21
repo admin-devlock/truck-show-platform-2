@@ -45,7 +45,7 @@ export default function MapPage({ params }: { params: Promise<{ id: string }> })
 }
 
 function Viewer({ id }: { id: string }) {
-  const { identity } = useAuth();
+  const { identity, user } = useAuth();
   const router = useRouter();
   const [map, setMap] = useState<MapDoc | null | undefined>(undefined);
   const [levels, setLevels] = useState<Level[]>([]);
@@ -324,7 +324,11 @@ function Viewer({ id }: { id: string }) {
         onBrandClick={() => router.push("/")}
         center={
           map ? (
-            <EditableTitle id={id} title={map.title} canEdit={map.ownerId === identity?.uid} />
+            <EditableTitle
+              id={id}
+              title={map.title}
+              canEdit={map.ownerId === identity?.uid || map.ownerId === user?.uid}
+            />
           ) : null
         }
         right={

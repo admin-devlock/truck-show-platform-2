@@ -14,10 +14,19 @@ import {
   updateDoc,
   deleteField,
   runTransaction,
+  writeBatch,
   type Timestamp,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import type { Identity } from "./auth";
+import {
+  matchBoothsByPosition,
+  findDuplicateBoothNumbers,
+  transferNumberedData,
+  type MatchBooth,
+  type RemapResult,
+  type TransferConflict,
+} from "./remap";
 
 export type MapStatus = "processing" | "ready" | "error";
 
@@ -37,6 +46,15 @@ export type MapDoc = {
 };
 
 const mapsCol = collection(db, "maps");
+
+/** Firestore create rules compare ownerId with the authenticated Firebase UID. Guest
+ * personas intentionally use a separate per-tab display id, so user.uid is not always
+ * the credential UID that the rules require. */
+function authenticatedOwnerId(): string {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error("You need to sign in again before creating a map.");
+  return uid;
+}
 
 /** Live-subscribe to all maps, newest first. Returns an unsubscribe fn. */
 export function subscribeMaps(cb: (maps: MapDoc[]) => void) {
@@ -67,7 +85,7 @@ export async function createMapFromSvg(
 ): Promise<string> {
   const docRef = await addDoc(mapsCol, {
     title,
-    ownerId: user.uid,
+    ownerId: authenticatedOwnerId(),
     ownerName: user.name,
     ownerPhoto: user.photo,
     status: "ready" as MapStatus,
@@ -122,7 +140,7 @@ export async function createMapFromUpload(
 ): Promise<string> {
   const docRef = await addDoc(mapsCol, {
     title,
-    ownerId: user.uid,
+    ownerId: authenticatedOwnerId(),
     ownerName: user.name,
     ownerPhoto: user.photo,
     status: "processing" as MapStatus,
@@ -142,26 +160,15 @@ export async function createMapFromUpload(
 
 async function convertAndStore(id: string, file: File) {
   try {
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch("/api/convert", { method: "POST", body: fd });
-    if (!res.ok) {
-      const { error } = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(error || `HTTP ${res.status}`);
-    }
-    const { svg, thumbSvg, booths, boothCount } = await res.json();
-    const viewBox =
-      booths && Array.isArray(booths.viewBox) ? (booths.viewBox as [number, number]) : null;
+    const converted = await convertCadFile(file);
 
     await setDoc(doc(db, "maps", id, "render", "main"), {
-      svg,
-      boothsJson: JSON.stringify(booths),
-      viewBox,
+      ...converted.render,
     });
     await updateDoc(doc(db, "maps", id), {
       status: "ready" as MapStatus,
-      thumbSvg: thumbSvg || null,
-      boothCount: boothCount ?? null,
+      thumbSvg: converted.thumbSvg,
+      boothCount: converted.boothCount,
       updatedAt: serverTimestamp(),
     });
   } catch (e) {
@@ -536,25 +543,14 @@ export async function replaceLevelCad(map: MapDoc, levelId: string, file: File) 
 
 async function convertAndStoreLevel(mapId: string, levelId: string, file: File) {
   try {
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch("/api/convert", { method: "POST", body: fd });
-    if (!res.ok) {
-      const { error } = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(error || `HTTP ${res.status}`);
-    }
-    const { svg, thumbSvg, booths, boothCount } = await res.json();
-    const viewBox =
-      booths && Array.isArray(booths.viewBox) ? (booths.viewBox as [number, number]) : null;
+    const converted = await convertCadFile(file);
     await setDoc(doc(db, "maps", mapId, "render", levelId), {
-      svg,
-      boothsJson: JSON.stringify(booths),
-      viewBox,
+      ...converted.render,
     });
     await updateDoc(levelDoc(mapId, levelId), {
       status: "ready" as MapStatus,
-      thumbSvg: thumbSvg || null,
-      boothCount: boothCount ?? null,
+      thumbSvg: converted.thumbSvg,
+      boothCount: converted.boothCount,
     });
     await updateDoc(doc(db, "maps", mapId), { updatedAt: serverTimestamp() });
   } catch (e) {
@@ -600,6 +596,37 @@ export type MapBackup = {
   levels: LevelBackup[];
 };
 
+export type ConvertedCad = {
+  render: MapRender;
+  thumbSvg: string | null;
+  boothCount: number | null;
+};
+
+/** Convert a CAD upload without writing map state. Revision imports use this to show
+ * a complete spatial-match preview before a new cloned map is created. */
+export async function convertCadFile(file: File): Promise<ConvertedCad> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch("/api/convert", { method: "POST", body: form });
+  if (!response.ok) {
+    const { error } = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error(error || `HTTP ${response.status}`);
+  }
+  const { svg, thumbSvg, booths, boothCount } = await response.json();
+  if (!svg || !booths || !Array.isArray(booths.booths)) {
+    throw new Error("The converter returned an incomplete floorplan.");
+  }
+  return {
+    render: {
+      svg,
+      boothsJson: JSON.stringify(booths),
+      viewBox: Array.isArray(booths.viewBox) ? (booths.viewBox as [number, number]) : null,
+    },
+    thumbSvg: thumbSvg || null,
+    boothCount: boothCount ?? booths.count ?? null,
+  };
+}
+
 /** Read a map's complete state (all levels + renders + map-wide assignments + statuses). */
 export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
   const levels = await getLevelsOnce(map);
@@ -633,19 +660,177 @@ export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
   };
 }
 
+export type RevisionReport = {
+  oldNumberedBooths: number;
+  newNumberedBooths: number;
+  matchedOldBooths: number;
+  splitBooths: number;
+  mergedBooths: number;
+  unmatchedOld: string[];
+  unmatchedNew: string[];
+  assignmentsFound: number;
+  assignmentsTransferred: number;
+  populatedNewBooths: number;
+  conflicts: TransferConflict[];
+};
+
+export type PreparedMapRevision = {
+  sourceTitle: string;
+  levelName: string;
+  fileName: string;
+  match: RemapResult;
+  report: RevisionReport;
+  /** Full cloned snapshot, held client-side until the user confirms creation. */
+  backup: MapBackup;
+};
+
+function parsedBooths(render: MapRender | null): MatchBooth[] {
+  if (!render?.boothsJson) return [];
+  const parsed = JSON.parse(render.boothsJson) as { booths?: MatchBooth[] };
+  return Array.isArray(parsed.booths) ? parsed.booths : [];
+}
+
+function applyStoredSplitsForRemap(
+  booths: MatchBooth[],
+  splits: Record<string, BoothSplit>,
+): MatchBooth[] {
+  return booths.flatMap((booth) => {
+    const split = booth.number ? splits[booth.number] : undefined;
+    if (!split?.parts?.length) return [booth];
+    return split.parts.map((part) => {
+      const polygon: [number, number][] = [];
+      for (let i = 0; i + 1 < part.polygon.length; i += 2) {
+        polygon.push([part.polygon[i], part.polygon[i + 1]]);
+      }
+      return { number: part.number, centroid: part.centroid, polygon };
+    });
+  });
+}
+
+/** Analyze an updated CAD against one level of an existing map. The source snapshot is
+ * saved to the independent host backup store first. This function never mutates the
+ * source map and does not create the new map until the caller confirms the preview. */
+export async function prepareMapRevision(
+  sourceMap: MapDoc,
+  sourceLevelId: string,
+  file: File,
+): Promise<PreparedMapRevision> {
+  const levels = await getLevelsOnce(sourceMap);
+  const levelIndex = levels.findIndex((level) => level.id === sourceLevelId);
+  if (levelIndex < 0) throw new Error("The selected source level no longer exists.");
+
+  const backup = await getMapBackup(sourceMap);
+  const backupResponse = await fetch("/api/backup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mapId: sourceMap.id, backup }),
+  });
+  if (!backupResponse.ok) {
+    throw new Error("The safety backup could not be saved, so the revision was not started.");
+  }
+
+  const selected = backup.levels[levelIndex];
+  if (!selected?.render) throw new Error("The selected level has no converted booth geometry.");
+  const rawOldBooths = parsedBooths(selected.render);
+  const oldBooths = applyStoredSplitsForRemap(rawOldBooths, backup.splits);
+  const converted = await convertCadFile(file);
+  const newBooths = parsedBooths(converted.render);
+  const oldDuplicates = findDuplicateBoothNumbers(oldBooths);
+  const newDuplicates = findDuplicateBoothNumbers(newBooths);
+  if (oldDuplicates.length || newDuplicates.length) {
+    const side = newDuplicates.length ? "new" : "old";
+    const numbers = newDuplicates.length ? newDuplicates : oldDuplicates;
+    throw new Error(
+      `The ${side} level contains duplicate booth number${numbers.length === 1 ? "" : "s"} ` +
+        `${numbers.slice(0, 5).join(", ")}. Position transfer would be ambiguous.`,
+    );
+  }
+  const match = matchBoothsByPosition(oldBooths, newBooths);
+  if (!match.stats.old || !match.stats.new) {
+    throw new Error("Both the old and new level need numbered booth outlines for position matching.");
+  }
+
+  const rawOldNumbers = rawOldBooths.flatMap((booth) => (booth.number ? [booth.number] : []));
+  const effectiveOldNumbers = oldBooths.flatMap((booth) => (booth.number ? [booth.number] : []));
+  const oldLevelNumbers = new Set([...rawOldNumbers, ...effectiveOldNumbers]);
+  const newNumbers = new Set(newBooths.flatMap((booth) => (booth.number ? [booth.number] : [])));
+
+  // Assignments are currently map-wide, so a new number that already exists on another
+  // level would make two physical booths share data. Refuse that ambiguous import.
+  const otherLevelNumbers = new Set<string>();
+  backup.levels.forEach((level, index) => {
+    if (index === levelIndex) return;
+    const effectiveBooths = applyStoredSplitsForRemap(parsedBooths(level.render), backup.splits);
+    for (const booth of effectiveBooths) if (booth.number) otherLevelNumbers.add(booth.number);
+  });
+  const crossLevelCollisions = [...newNumbers].filter((number) => otherLevelNumbers.has(number));
+  if (crossLevelCollisions.length) {
+    throw new Error(
+      `The new CAD reuses ${crossLevelCollisions.length} booth number(s) from another level ` +
+        `(for example ${crossLevelCollisions.slice(0, 3).join(", ")}).`,
+    );
+  }
+
+  const transferred = transferNumberedData(backup.assignments, oldLevelNumbers, match);
+  backup.assignments = transferred.data;
+  backup.splits = Object.fromEntries(
+    Object.entries(backup.splits).filter(([number]) => !oldLevelNumbers.has(number)),
+  );
+  selected.sourceFile = file.name;
+  selected.boothCount = converted.boothCount;
+  selected.thumbSvg = converted.thumbSvg;
+  selected.render = converted.render;
+
+  return {
+    sourceTitle: sourceMap.title,
+    levelName: levels[levelIndex].name,
+    fileName: file.name,
+    match,
+    report: {
+      oldNumberedBooths: match.stats.old,
+      newNumberedBooths: match.stats.new,
+      matchedOldBooths: match.stats.matched,
+      splitBooths: match.stats.split,
+      mergedBooths: match.stats.merged,
+      unmatchedOld: match.unmatched.map(({ number }) => number),
+      unmatchedNew: match.unmatchedNew.map(({ number }) => number),
+      assignmentsFound: transferred.sourceWithData,
+      assignmentsTransferred: transferred.transferredSources,
+      populatedNewBooths: transferred.populatedDestinations,
+      conflicts: transferred.conflicts,
+    },
+    backup,
+  };
+}
+
+/** Commit a confirmed revision preview as a completely new map. */
+export async function createMapFromRevision(
+  user: Identity,
+  title: string,
+  prepared: PreparedMapRevision,
+): Promise<string> {
+  return restoreMap(user, prepared.backup, title.trim() || `${prepared.sourceTitle} (updated)`);
+}
+
 /** Rebuild a map from a backup JSON. Creates a fresh map doc + all levels/renders/data. */
 export async function restoreMap(
   user: Identity,
   backup: MapBackup,
   titleOverride?: string,
 ): Promise<string> {
-  if (!backup || backup.version !== 1 || !Array.isArray(backup.levels)) {
+  if (!backup || backup.version !== 1 || !Array.isArray(backup.levels) || !backup.levels.length) {
     throw new Error("Not a valid map backup file.");
   }
   const first = backup.levels[0];
-  const mapRef = await addDoc(mapsCol, {
+  const mapRef = doc(mapsCol);
+  const mapId = mapRef.id;
+
+  // Build the whole restore as one atomic commit. If any render/meta/level write is
+  // rejected, no half-created map is left behind on the dashboard.
+  const batch = writeBatch(db);
+  batch.set(mapRef, {
     title: titleOverride ?? (backup.title ? `${backup.title} (restored)` : "Restored map"),
-    ownerId: user.uid,
+    ownerId: authenticatedOwnerId(),
     ownerName: user.name,
     ownerPhoto: user.photo,
     status: "ready" as MapStatus,
@@ -656,7 +841,6 @@ export async function restoreMap(
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-  const mapId = mapRef.id;
 
   // Map-wide status types + assignments + splits. (Old backups stored assignments/splits
   // per level; fold those in for backward compatibility.)
@@ -666,7 +850,7 @@ export async function restoreMap(
     Object.assign(assignments, lvl.assignments ?? {});
     Object.assign(splits, lvl.splits ?? {});
   }
-  await setDoc(boothMeta(mapId), {
+  batch.set(boothMeta(mapId), {
     statusTypes: backup.statusTypes ?? [],
     activeStatusTypeId: backup.activeStatusTypeId ?? null,
     assignments,
@@ -677,7 +861,7 @@ export async function restoreMap(
   for (let i = 0; i < backup.levels.length; i++) {
     const lvl = backup.levels[i];
     const levelId = i === 0 ? DEFAULT_LEVEL_ID : newId();
-    await setDoc(levelDoc(mapId, levelId), {
+    batch.set(levelDoc(mapId, levelId), {
       name: lvl.name,
       sourceFile: lvl.sourceFile ?? null,
       svgUrl: lvl.svgUrl ?? null,
@@ -687,13 +871,14 @@ export async function restoreMap(
       order: lvl.order ?? i,
     });
     if (lvl.render) {
-      await setDoc(doc(db, "maps", mapId, "render", levelId), {
+      batch.set(doc(db, "maps", mapId, "render", levelId), {
         svg: lvl.render.svg,
         boothsJson: lvl.render.boothsJson,
         viewBox: lvl.render.viewBox ?? null,
       });
     }
   }
+  await batch.commit();
   return mapId;
 }
 

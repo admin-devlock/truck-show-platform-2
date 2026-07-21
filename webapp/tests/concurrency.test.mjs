@@ -39,14 +39,16 @@ const app = initializeApp({
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 });
-await signInAnonymously(getAuth(app));
+const auth = getAuth(app);
+const credential = await signInAnonymously(auth);
 const db = getFirestore(app);
 
 // ---- write helpers (mirror src/lib/maps.ts) ----
 const DEFAULT_LEVEL_ID = "main";
 const boothMeta = (id) => doc(db, "maps", id, "meta", "booths");
-const assignDoc = (id, level) =>
-  level === DEFAULT_LEVEL_ID ? boothMeta(id) : doc(db, "maps", id, "meta", `level_${level}`);
+// Assignments are map-wide in the app; the level parameter remains in these helpers
+// so the concurrency scenarios still read naturally.
+const assignDoc = (id, _level) => boothMeta(id);
 const levelsCol = (id) => collection(db, "maps", id, "levels");
 const levelDoc = (id, lid) => doc(db, "maps", id, "levels", lid);
 const rid = () => Math.random().toString(36).slice(2, 10);
@@ -93,7 +95,7 @@ async function test(name, fn) {
 
 // Create an isolated throwaway map.
 const mapRef = await addDoc(collection(db, "maps"), {
-  title: "concurrency-test", ownerId: "test", ownerName: "test", status: "ready",
+  title: "concurrency-test", ownerId: credential.user.uid, ownerName: "test", status: "ready",
   createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
 });
 const MAP = mapRef.id;

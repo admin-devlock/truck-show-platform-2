@@ -62,7 +62,7 @@ export function NewLevelDialog({
         <input
           ref={inputRef}
           type="file"
-          accept=".dwg,.dxf"
+          accept=".dwg"
           className="hidden"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />

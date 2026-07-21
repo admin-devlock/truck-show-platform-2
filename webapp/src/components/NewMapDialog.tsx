@@ -56,13 +56,13 @@ export function NewMapDialog({ onClose }: { onClose: () => void }) {
           {file ? (
             <span className="text-[color:var(--color-ink)]">{file.name}</span>
           ) : (
-            <>Click to choose a .dwg / .dxf file</>
+            <>Click to choose a .dwg file</>
           )}
         </button>
         <input
           ref={inputRef}
           type="file"
-          accept=".dwg,.dxf"
+          accept=".dwg"
           className="hidden"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />

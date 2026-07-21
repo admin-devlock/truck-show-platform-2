@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:concurrency": "node tests/concurrency.test.mjs"
+    "test:concurrency": "node tests/concurrency.test.mjs",
+    "test:remap": "node --test tests/remap.test.mjs"
   },
   "dependencies": {
     "firebase": "^11.1.0",

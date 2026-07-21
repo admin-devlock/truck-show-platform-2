@@ -69,6 +69,10 @@ with open(IN_JSON, encoding="utf-8", errors="replace") as f:
 # dropped for nan (a signed NaN is meaningless here anyway).
 raw = re.sub(r"(?<=[ ,\[:])-?nan(?=[, \]\n])", "NaN", raw)
 raw = re.sub(r"(?<=[ ,\[:])(-?)inf(?=[, \]\n])", r"\1Infinity", raw)
+# Some DWGs make libredwg print an integer-valued double as `123.`. JSON requires at
+# least one digit after the decimal point, so normalize only that delimiter-bounded
+# form (leaving ordinary decimals and digits inside strings untouched).
+raw = re.sub(r"(?<![\w.])(\-?\d+)\.(?=\s*[,}\]])", r"\1.0", raw)
 doc = json.loads(raw)
 del raw
 objs = doc.get("OBJECTS")

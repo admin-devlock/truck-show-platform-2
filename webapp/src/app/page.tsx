@@ -7,6 +7,7 @@ import { TopBar } from "@/components/TopBar";
 import { MapCard } from "@/components/MapCard";
 import { NewMapDialog } from "@/components/NewMapDialog";
 import { DeleteMapDialog } from "@/components/DeleteMapDialog";
+import { UpdateMapDialog } from "@/components/UpdateMapDialog";
 import { useAuth } from "@/lib/auth";
 import { subscribeMaps, createMapFromSvg, type MapDoc } from "@/lib/maps";
 import { restoreFromFile } from "@/lib/backup";
@@ -25,6 +26,7 @@ function Dashboard() {
   const [maps, setMaps] = useState<MapDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [showUpdate, setShowUpdate] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [toDelete, setToDelete] = useState<MapDoc | null>(null);
@@ -77,6 +79,9 @@ function Dashboard() {
             <NewTile label="Upload CAD" onClick={() => setShowNew(true)}>
               <PlusGlyph />
             </NewTile>
+            <NewTile label="Update existing" onClick={() => setShowUpdate(true)} disabled={loading || maps.length === 0}>
+              <UpdateGlyph />
+            </NewTile>
             <NewTile label="Plaza sample" onClick={createSample} busy={seeding}>
               <MapThumb />
             </NewTile>
@@ -120,6 +125,7 @@ function Dashboard() {
       </section>
 
       {showNew && <NewMapDialog onClose={() => setShowNew(false)} />}
+      {showUpdate && <UpdateMapDialog maps={maps} onClose={() => setShowUpdate(false)} />}
       {toDelete && <DeleteMapDialog map={toDelete} onClose={() => setToDelete(null)} />}
     </div>
   );
@@ -130,14 +136,16 @@ function NewTile({
   label,
   onClick,
   busy,
+  disabled,
 }: {
   children: React.ReactNode;
   label: string;
   onClick: () => void;
   busy?: boolean;
+  disabled?: boolean;
 }) {
   return (
-    <button onClick={onClick} disabled={busy} className="group text-left">
+    <button onClick={onClick} disabled={busy || disabled} className="group text-left disabled:opacity-50 disabled:cursor-not-allowed">
       <div className="w-[150px] h-[112px] card grid place-items-center group-hover:border-[color:var(--color-accent)]">
         {busy ? (
           <span className="h-5 w-5 rounded-full border-2 border-[color:var(--color-line)] border-t-[color:var(--color-accent)] animate-spin" />
@@ -164,6 +172,16 @@ function RestoreGlyph() {
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
       <path d="M3 3v5h5" />
+    </svg>
+  );
+}
+
+function UpdateGlyph() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6h10a5 5 0 0 1 5 5v1" />
+      <path d="m16 9 3 3 3-3" />
+      <rect x="4" y="12" width="8" height="7" rx="1" />
     </svg>
   );
 }
