@@ -684,6 +684,66 @@ export type PreparedMapRevision = {
   backup: MapBackup;
 };
 
+const REVISION_BACKUP_DB = "truck-show-safety-backups";
+const REVISION_BACKUP_STORE = "map-backups";
+
+function openRevisionBackupDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("This browser does not support local safety backups."));
+      return;
+    }
+    const request = indexedDB.open(REVISION_BACKUP_DB, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(REVISION_BACKUP_STORE)) {
+        request.result.createObjectStore(REVISION_BACKUP_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Could not open local backup storage."));
+  });
+}
+
+/** Persist and read back the source snapshot before revision analysis. IndexedDB is
+ * durable browser storage and works on serverless hosts such as Netlify, where the
+ * function filesystem cannot be used as a persistent backup destination. */
+async function saveRevisionSafetyBackup(mapId: string, backup: MapBackup): Promise<void> {
+  const database = await openRevisionBackupDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(REVISION_BACKUP_STORE, "readwrite");
+      transaction.objectStore(REVISION_BACKUP_STORE).put(
+        { savedAt: new Date().toISOString(), backup },
+        mapId,
+      );
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error("Could not save the local safety backup."));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("The local safety backup was cancelled."));
+    });
+
+    const saved = await new Promise<{ backup?: MapBackup } | undefined>((resolve, reject) => {
+      const request = database
+        .transaction(REVISION_BACKUP_STORE, "readonly")
+        .objectStore(REVISION_BACKUP_STORE)
+        .get(mapId);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () =>
+        reject(request.error ?? new Error("Could not verify the local safety backup."));
+    });
+    if (
+      saved?.backup?.version !== 1 ||
+      saved.backup.exportedAt !== backup.exportedAt ||
+      saved.backup.title !== backup.title
+    ) {
+      throw new Error("The local safety backup could not be verified.");
+    }
+  } finally {
+    database.close();
+  }
+}
+
 function parsedBooths(render: MapRender | null): MatchBooth[] {
   if (!render?.boothsJson) return [];
   const parsed = JSON.parse(render.boothsJson) as { booths?: MatchBooth[] };
@@ -708,7 +768,7 @@ function applyStoredSplitsForRemap(
 }
 
 /** Analyze an updated CAD against one level of an existing map. The source snapshot is
- * saved to the independent host backup store first. This function never mutates the
+ * saved and verified in durable browser storage first. This function never mutates the
  * source map and does not create the new map until the caller confirms the preview. */
 export async function prepareMapRevision(
   sourceMap: MapDoc,
@@ -720,14 +780,7 @@ export async function prepareMapRevision(
   if (levelIndex < 0) throw new Error("The selected source level no longer exists.");
 
   const backup = await getMapBackup(sourceMap);
-  const backupResponse = await fetch("/api/backup", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mapId: sourceMap.id, backup }),
-  });
-  if (!backupResponse.ok) {
-    throw new Error("The safety backup could not be saved, so the revision was not started.");
-  }
+  await saveRevisionSafetyBackup(sourceMap.id, backup);
 
   const selected = backup.levels[levelIndex];
   if (!selected?.render) throw new Error("The selected level has no converted booth geometry.");

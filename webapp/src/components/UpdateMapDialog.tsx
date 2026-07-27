@@ -92,7 +92,7 @@ export function UpdateMapDialog({ maps, onClose }: { maps: MapDoc[]; onClose: ()
         <h2 className="text-lg font-medium">Create map from updated CAD</h2>
         <p className="text-xs text-[color:var(--color-ink-soft)] mt-1 mb-5 leading-relaxed">
           Clones an existing map, replaces one level, and transfers booth data by physical position.
-          The source is backed up first and is never changed.
+          The source is backed up in this browser first and is never changed.
         </p>
 
         <label htmlFor="revision-source" className="block text-xs font-medium text-[color:var(--color-ink-soft)] mb-1">Source map</label>
@@ -204,7 +204,7 @@ function RevisionPreview({ prepared }: { prepared: PreparedMapRevision }) {
         </div>
       )}
       <div className="mt-3 text-[color:var(--color-ink-soft)]">
-        A verified source backup has been saved. Creating continues into a separate map.
+        A verified source backup has been saved in this browser. Creating continues into a separate map.
       </div>
     </div>
   );
