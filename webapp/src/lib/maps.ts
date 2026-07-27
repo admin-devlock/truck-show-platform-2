@@ -709,12 +709,16 @@ function openRevisionBackupDb(): Promise<IDBDatabase> {
  * function filesystem cannot be used as a persistent backup destination. */
 async function saveRevisionSafetyBackup(mapId: string, backup: MapBackup): Promise<void> {
   const database = await openRevisionBackupDb();
+  // A timestamped key preserves revision history. Never replace an earlier safety
+  // snapshot merely because another revision is analyzed for the same source map.
+  const backupKey = `${mapId}:${backup.exportedAt}`;
+  const serialized = JSON.stringify(backup);
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(REVISION_BACKUP_STORE, "readwrite");
       transaction.objectStore(REVISION_BACKUP_STORE).put(
         { savedAt: new Date().toISOString(), backup },
-        mapId,
+        backupKey,
       );
       transaction.oncomplete = () => resolve();
       transaction.onerror = () =>
@@ -727,15 +731,14 @@ async function saveRevisionSafetyBackup(mapId: string, backup: MapBackup): Promi
       const request = database
         .transaction(REVISION_BACKUP_STORE, "readonly")
         .objectStore(REVISION_BACKUP_STORE)
-        .get(mapId);
+        .get(backupKey);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () =>
         reject(request.error ?? new Error("Could not verify the local safety backup."));
     });
     if (
       saved?.backup?.version !== 1 ||
-      saved.backup.exportedAt !== backup.exportedAt ||
-      saved.backup.title !== backup.title
+      JSON.stringify(saved.backup) !== serialized
     ) {
       throw new Error("The local safety backup could not be verified.");
     }
