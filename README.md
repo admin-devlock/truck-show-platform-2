@@ -56,6 +56,30 @@ Public Firebase web config (safe to expose; inlined into the client bundle):
 Firestore/Storage security rules live in `webapp/firestore.rules` (prod) and
 `webapp/firestore.rules.dev` (guest testing) — publish via the Firebase console.
 
+## Download a Firestore backup
+
+With `webapp/.env.local` configured, run:
+
+```bash
+cd webapp
+npm run backup:firestore
+```
+
+This read-only command downloads every map and all of its `levels`, `render`, `meta`,
+and `presence` documents. It creates a timestamped directory under the repository's
+ignored `backups/` folder, with one JSON file per map plus a checksummed
+`manifest.json`.
+
+To choose a different destination:
+
+```bash
+npm run backup:firestore -- /path/to/backup-folder
+```
+
+The script signs in anonymously, so Anonymous Authentication must be enabled for the
+Firebase project and the signed-in user must be allowed to read the data by the
+Firestore rules.
+
 ## Container / cloud deploy
 
 The [`Dockerfile`](Dockerfile) bundles the webapp **and** the conversion toolchain

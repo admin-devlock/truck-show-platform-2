@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "backup:firestore": "node scripts/backup_all_maps.mjs",
     "test:concurrency": "node tests/concurrency.test.mjs",
     "test:remap": "node --test tests/remap.test.mjs"
   },

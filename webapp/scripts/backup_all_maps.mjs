@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// Read-only disaster-recovery export of every map visible to an authenticated user.
-// Usage: node scripts/backup_all_maps.mjs [output-directory]
+// Read-only disaster-recovery export of all application data in Firestore.
+// Run from webapp/: npm run backup:firestore -- [output-directory]
 
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -28,7 +28,18 @@ async function loadEnv(path) {
 
 function jsonValue(value) {
   if (value == null || typeof value !== "object") return value;
+  if (value instanceof Date) return { __date: value.toISOString() };
   if (typeof value.toDate === "function") return { __timestamp: value.toDate().toISOString() };
+  if (typeof value.toBase64 === "function") return { __bytes: value.toBase64() };
+  if (
+    typeof value.latitude === "number" &&
+    typeof value.longitude === "number"
+  ) {
+    return { __geopoint: [value.latitude, value.longitude] };
+  }
+  if (typeof value.path === "string" && value.firestore) {
+    return { __reference: value.path };
+  }
   if (Array.isArray(value)) return value.map(jsonValue);
   return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, jsonValue(child)]));
 }
@@ -62,25 +73,31 @@ await signInAnonymously(getAuth(app));
 const db = getFirestore(app);
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-const outputDir = resolve(process.argv[2] || `../backups/map-export-${stamp}`);
+const outputDir = resolve(process.argv[2] || `../backups/firestore-export-${stamp}`);
 await mkdir(outputDir, { recursive: true });
 
 const mapSnapshot = await getDocs(collection(db, "maps"));
+// Firestore's web SDK cannot discover collection names. Keep this list aligned with
+// firestore.rules; these are every subcollection used by this application.
+const mapSubcollections = ["levels", "render", "meta", "presence"];
 const manifest = {
-  format: "truck-show-raw-firestore-export-v1",
+  format: "truck-show-raw-firestore-export-v2",
   exportedAt: new Date().toISOString(),
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   mapCount: mapSnapshot.size,
+  collections: { maps: mapSnapshot.size },
   maps: [],
 };
 
 for (const mapDoc of mapSnapshot.docs) {
   const subcollections = {};
-  for (const name of ["levels", "render", "meta"]) {
+  for (const name of mapSubcollections) {
     const snap = await getDocs(collection(db, "maps", mapDoc.id, name));
     subcollections[name] = Object.fromEntries(
       snap.docs.map((entry) => [entry.id, jsonValue(entry.data())]),
     );
+    const path = `maps/*/${name}`;
+    manifest.collections[path] = (manifest.collections[path] || 0) + snap.size;
   }
   const payload = {
     format: "truck-show-raw-map-export-v1",
@@ -106,6 +123,7 @@ for (const mapDoc of mapSnapshot.docs) {
     levels: Object.keys(subcollections.levels).length,
     renders: Object.keys(subcollections.render).length,
     metaDocuments: Object.keys(subcollections.meta).length,
+    presenceDocuments: Object.keys(subcollections.presence).length,
   });
 }
 
