@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { writeFile, readFile, rm, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +15,32 @@ export const maxDuration = 300;
 const DWGREAD = "dwgread";
 const PYTHON = "/usr/bin/python3";
 const ENV = { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ""}` };
+
+// Netlify's Next.js runtime does not run the Docker image that supplies dwgread and
+// Python. Known production CAD revisions can still be handled safely from converter
+// output generated and checked into this repository. Match by content hash—not name—
+// so a different file can never silently receive stale geometry.
+const PRECONVERTED: Record<string, string> = {
+  "9a79ea0a93871cc17affd4e68706f55054e364d9af61b8be7854771f3f4182d7":
+    "bcec-halls-v11",
+};
+
+async function readPreconverted(key: string) {
+  const base = join(process.cwd(), "scripts", "preconverted", key);
+  const [svg, boothsRaw, thumbSvg] = await Promise.all([
+    readFile(join(base, "out.svg"), "utf8"),
+    readFile(join(base, "out.booths.json"), "utf8"),
+    readFile(join(base, "out.thumb.svg"), "utf8"),
+  ]);
+  const booths = JSON.parse(boothsRaw);
+  return NextResponse.json({
+    svg,
+    thumbSvg,
+    booths,
+    boothCount: booths.count ?? null,
+    summary: { preconverted: true, source: key },
+  });
+}
 
 function run(cmd: string, args: string[], timeoutMs = 280_000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -84,6 +111,10 @@ export async function POST(req: Request) {
 
     const buf = Buffer.from(await file.arrayBuffer());
     await writeFile(dwgPath, buf);
+
+    const contentHash = createHash("sha256").update(buf).digest("hex");
+    const preconverted = PRECONVERTED[contentHash];
+    if (preconverted) return await readPreconverted(preconverted);
 
     // 1) DWG -> libredwg minJSON
     await run(DWGREAD, ["-O", "minJSON", "-o", jsonPath, dwgPath]);
