@@ -305,6 +305,17 @@ def point_in_poly(x, y, pts):
         j = i
     return inside
 
+def set_booth_geometry(b, number=None, label_pos=None):
+    """Populate all derived fields after selecting/recovering a source polygon."""
+    w, d = min_area_rect(b["pts"])
+    xs = [p[0] for p in b["pts"]]; ys = [p[1] for p in b["pts"]]
+    b.update({"w": w, "d": d, "diag": math.hypot(w, d), "number": number,
+              "minx": min(xs), "maxx": max(xs), "miny": min(ys), "maxy": max(ys)})
+    if label_pos is not None:
+        b["label_pos"] = label_pos
+    else:
+        b.pop("label_pos", None)
+
 layer_kind = {n: k for n, k in BOOTH_LAYERS}
 layer_prio = {n: i for i, (n, _) in enumerate(BOOTH_LAYERS)}
 raw_polys = []
@@ -333,10 +344,7 @@ for b in raw_polys:
             host = k
             break
     if host is None:
-        w, d = min_area_rect(b["pts"])
-        xs = [p[0] for p in b["pts"]]; ys = [p[1] for p in b["pts"]]
-        b.update({"w": w, "d": d, "diag": math.hypot(w, d), "number": None,
-                  "minx": min(xs), "maxx": max(xs), "miny": min(ys), "maxy": max(ys)})
+        set_booth_geometry(b)
         booths.append(b)
     else:
         # keep the dropped overlapping polygon on its host as auditable evidence
@@ -374,8 +382,53 @@ for dist, _, ni, bi in pairs:
     if num_taken[ni] or booths[bi]["number"] is not None:
         continue
     booths[bi]["number"] = nums[ni][2]
+    booths[bi]["label_pos"] = (nums[ni][0], nums[ni][1])
     num_taken[ni] = True
 orphans = [(nx, ny, s) for ni, (nx, ny, s) in enumerate(nums) if not num_taken[ni]]
+
+# Known BCEC drafting correction. Booths 188 and 189 are two adjacent footprints in
+# every supplied halls drawing, but an extra enclosing BOOTHLINE rectangle causes the
+# overlap cleanup above to combine them. Their individual source polygons and labels
+# are still present, so recover them from that evidence instead of hard-coding map
+# coordinates. The strict area/containment checks make this a no-op for other plans.
+def recover_known_divided_booth(orphan_number, host_number):
+    orphan_match = next(((x, y, s) for x, y, s in orphans if s == orphan_number), None)
+    host = next((b for b in booths if b.get("number") == host_number), None)
+    if orphan_match is None or host is None or not host.get("absorbed") or not host.get("label_pos"):
+        return False
+    ox, oy, _ = orphan_match
+    hx, hy = host["label_pos"]
+    if not point_in_poly(ox, oy, host["pts"]):
+        return False
+    orphan_parts = [a for a in host["absorbed"] if point_in_poly(ox, oy, a["pts"])]
+    host_parts = [a for a in host["absorbed"] if point_in_poly(hx, hy, a["pts"])]
+    candidates = []
+    for orphan_part in orphan_parts:
+        for host_part in host_parts:
+            if orphan_part is host_part:
+                continue
+            combined = orphan_part["area"] + host_part["area"]
+            if host["area"] <= 0 or abs(combined - host["area"]) / host["area"] > 0.02:
+                continue
+            # Each label must belong only to its own recovered half.
+            if point_in_poly(hx, hy, orphan_part["pts"]) or point_in_poly(ox, oy, host_part["pts"]):
+                continue
+            candidates.append((orphan_part["prio"] + host_part["prio"], orphan_part, host_part))
+    if not candidates:
+        return False
+    _, orphan_part, host_part = min(candidates, key=lambda item: item[0])
+
+    recovered = dict(orphan_part)
+    recovered.pop("absorbed", None)
+    set_booth_geometry(recovered, orphan_number, (ox, oy))
+    host.update({key: value for key, value in host_part.items() if key != "absorbed"})
+    host.pop("absorbed", None)
+    set_booth_geometry(host, host_number, (hx, hy))
+    booths.append(recovered)
+    orphans.remove(orphan_match)
+    return True
+
+recover_known_divided_booth("188", "189")
 
 # =====================================================================
 #  SVG — geometry + booth labels (number + dimensions) centred on each booth

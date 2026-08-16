@@ -46,8 +46,16 @@ export function applyBoothSplits(
 ): Booth[] | undefined {
   if (!booths) return booths;
   if (!splits || Object.keys(splits).length === 0) return booths;
+  // A drafting error can leave the future part number as an orphan CAD label inside
+  // the unsplit source booth (BCEC 188/189 is the real example). Once an explicit
+  // split supplies geometry for that number, suppress only the redundant label-only
+  // record. Never hide a genuine polygon if somebody chooses a colliding part number.
+  const splitPartNumbers = new Set(
+    Object.values(splits).flatMap((split) => split.parts?.map((part) => part.number) ?? []),
+  );
   const out: Booth[] = [];
   for (const b of booths) {
+    if (b.number && !b.polygon?.length && splitPartNumbers.has(b.number)) continue;
     const split = b.number ? splits[b.number] : undefined;
     if (split?.parts?.length) {
       for (const p of split.parts) {

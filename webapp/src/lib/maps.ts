@@ -757,7 +757,13 @@ function applyStoredSplitsForRemap(
   booths: MatchBooth[],
   splits: Record<string, BoothSplit>,
 ): MatchBooth[] {
+  const splitPartNumbers = new Set(
+    Object.values(splits).flatMap((split) => split.parts?.map((part) => part.number) ?? []),
+  );
   return booths.flatMap((booth) => {
+    // A split part can replace an orphan CAD label with the same number. Keep the
+    // real split geometry and discard only that geometry-less duplicate.
+    if (booth.number && !booth.polygon?.length && splitPartNumbers.has(booth.number)) return [];
     const split = booth.number ? splits[booth.number] : undefined;
     if (!split?.parts?.length) return [booth];
     return split.parts.map((part) => {

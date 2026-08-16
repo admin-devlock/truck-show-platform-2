@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   matchBoothsByPosition,
@@ -6,6 +7,7 @@ import {
   polygonIntersectionArea,
   transferNumberedData,
 } from "../src/lib/remap.ts";
+import { applyBoothSplits } from "../src/lib/booths.ts";
 
 const booth = (number, polygon) => ({
   number,
@@ -31,6 +33,41 @@ test("duplicate booth numbers are reported once in natural order", () => {
     ]),
     ["2", "10"],
   );
+});
+
+test("an explicit split replaces a matching orphan CAD label with real geometry", () => {
+  const raw = [
+    {
+      number: "189", kind: "built", width_m: 19, depth_m: 18, area_m2: 342,
+      irregular: false, centroid: [9.5, 9], polygon: [[0, 0], [19, 0], [19, 18], [0, 18]],
+    },
+    {
+      number: "188", kind: "label_only", width_m: null, depth_m: null, area_m2: null,
+      irregular: null, centroid: [5, 9], polygon: null,
+    },
+  ];
+  const effective = applyBoothSplits(raw, {
+    "189": {
+      parts: [
+        { number: "188", polygon: [0, 0, 10, 0, 10, 18, 0, 18], centroid: [5, 9], width_m: 10, depth_m: 18, area_m2: 180 },
+        { number: "189", polygon: [10, 0, 19, 0, 19, 18, 10, 18], centroid: [14.5, 9], width_m: 9, depth_m: 18, area_m2: 162 },
+      ],
+    },
+  });
+  assert.deepEqual(effective.map(({ number }) => number), ["188", "189"]);
+  assert.equal(effective.filter(({ number }) => number === "188").length, 1);
+  assert.equal(effective.every(({ polygon }) => polygon?.length === 4), true);
+});
+
+test("the production BCEC v11 conversion contains separate 188 and 189 footprints", () => {
+  const converted = JSON.parse(readFileSync(
+    new URL("../scripts/preconverted/bcec-halls-v11/out.booths.json", import.meta.url),
+    "utf8",
+  ));
+  const pair = converted.booths.filter(({ number }) => number === "188" || number === "189");
+  assert.deepEqual(pair.map(({ number }) => number).sort(), ["188", "189"]);
+  assert.equal(pair.every(({ polygon }) => polygon?.length === 4), true);
+  assert.equal(pair.reduce((sum, booth) => sum + booth.area_m2, 0), 342);
 });
 
 test("matching identifies splits and merges without using booth numbers", () => {
