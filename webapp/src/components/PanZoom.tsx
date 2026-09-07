@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
 import { statusIdForType } from "@/lib/statuses";
+import { auditAction } from "@/lib/activity";
 
 /**
  * Unlimited pan/zoom viewer for an inline SVG.
@@ -206,6 +207,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
     target: EventTarget | null;
     moved: boolean;
   } | null>(null);
+  const wheelAuditTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Inject the SVG (from an inline string or by fetching a URL); read its intrinsic
   // size from the viewBox.
@@ -708,9 +710,14 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - rect.left, e.clientY - rect.top);
+      if (wheelAuditTimer.current) clearTimeout(wheelAuditTimer.current);
+      wheelAuditTimer.current = setTimeout(() => auditAction("Zoom map"), 350);
     };
     el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
+    return () => {
+      el.removeEventListener("wheel", handler);
+      if (wheelAuditTimer.current) clearTimeout(wheelAuditTimer.current);
+    };
   }, [zoomAt]);
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -753,10 +760,16 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   const onPointerUp = () => {
     const d = drag.current;
     drag.current = null;
+    if (d?.moved) auditAction("Pan map");
     // A tap (no real movement) selects the booth under the pointer, or clears it.
     if (d && !d.moved && onSelect) {
       const hit = (d.target as Element | null)?.closest?.("[data-bi]");
-      onSelect(hit ? Number(hit.getAttribute("data-bi")) : null);
+      const index = hit ? Number(hit.getAttribute("data-bi")) : null;
+      onSelect(index);
+      auditAction(
+        index == null ? "Clear booth selection" : "Select booth",
+        index == null ? undefined : { boothNumber: booths?.[index]?.number ?? null },
+      );
     }
   };
 

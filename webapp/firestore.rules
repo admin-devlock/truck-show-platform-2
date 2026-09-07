@@ -9,6 +9,15 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Append-only workspace audit trail. A client may only attribute an event to its
+    // authenticated Firebase identity; history cannot be edited or deleted later.
+    match /activity/{eventId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.authUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
     match /maps/{mapId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;

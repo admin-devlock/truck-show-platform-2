@@ -108,6 +108,7 @@ export function StatusLegend({
               return (
                 <section
                   key={type.id}
+                  data-audit-action="Reorder status types"
                   draggable={types.length > 1}
                   onDragStart={(event) => {
                     setDraggingId(type.id);

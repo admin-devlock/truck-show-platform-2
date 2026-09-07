@@ -37,8 +37,8 @@ export function MapCard({ map, onRequestDelete }: { map: MapDoc; onRequestDelete
   }, []);
 
   return (
-    <div className="relative group">
-      <Link href={`/map/${map.id}`} className="card overflow-hidden block">
+    <div className="relative group" data-map-id={map.id}>
+      <Link href={`/map/${map.id}`} data-audit-action="Open map" className="card overflow-hidden block">
         <div className="h-36 bg-[#fbfbfa] border-b border-[color:var(--color-line)] relative grid place-items-center">
           <div
             className="absolute inset-0"

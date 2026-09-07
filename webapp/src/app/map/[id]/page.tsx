@@ -574,6 +574,7 @@ function EditableTitle({ id, title, canEdit }: { id: string; title: string; canE
     <input
       autoFocus
       value={val}
+      data-audit-action="Map title"
       onChange={(e) => setVal(e.target.value)}
       onBlur={() => {
         setEditing(false);

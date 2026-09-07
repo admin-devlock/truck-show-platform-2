@@ -10,6 +10,10 @@ service cloud.firestore {
     function signedIn() {
       return request.auth != null;
     }
+    match /activity/{eventId} {
+      allow read, create: if signedIn();
+      allow update, delete: if false;
+    }
     match /maps/{mapId} {
       allow read, create, update, delete: if signedIn();
       // Any subcollection under a map (presence, render, meta, …) is collaborative

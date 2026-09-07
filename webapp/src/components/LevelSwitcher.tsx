@@ -119,7 +119,12 @@ function LevelDeck({
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
+      data-audit-click="true"
+      data-audit-action="Close level switcher"
+      onClick={onClose}
+    >
       <div className="card w-full max-w-xl p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
           <h2 className="text-sm font-medium">Levels</h2>
@@ -256,6 +261,7 @@ function LevelActions({
       <input
         autoFocus
         value={name}
+        data-audit-action="Level name"
         onChange={(e) => setName(e.target.value)}
         onBlur={commitRename}
         onKeyDown={(e) => {
@@ -281,7 +287,12 @@ function LevelActions({
       </button>
       {menu && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setMenu(false)} />
+          <div
+            className="fixed inset-0 z-30"
+            data-audit-click="true"
+            data-audit-action="Close level actions"
+            onClick={() => setMenu(false)}
+          />
           <div className="absolute z-40 mt-1 left-0 w-40 card py-1 text-sm">
             <button
               onClick={() => {

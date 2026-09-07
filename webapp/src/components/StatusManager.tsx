@@ -192,6 +192,8 @@ export function StatusManager({
     <>
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
+      data-audit-click="true"
+      data-audit-action="Close status manager"
       onClick={dirty || busy ? undefined : onClose}
     >
       <div className="card w-full max-w-lg p-6 max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
@@ -219,6 +221,7 @@ export function StatusManager({
               <div className="flex items-center gap-2 mb-3">
                 <input
                   value={t.name}
+                  data-audit-action="Status type name"
                   onChange={(e) => renameType(ti, e.target.value)}
                   className="flex-1 font-medium text-sm border-b border-transparent hover:border-[color:var(--color-line)] focus:border-[color:var(--color-accent)] outline-none py-1"
                 />
@@ -258,6 +261,7 @@ export function StatusManager({
                     />
                     <input
                       value={s.name}
+                      data-audit-action="Status name"
                       onChange={(e) => editStatus(ti, si, { name: e.target.value })}
                       className="flex-1 text-sm border border-[color:var(--color-line)] rounded px-2 py-1 outline-none focus:border-[color:var(--color-accent)]"
                     />

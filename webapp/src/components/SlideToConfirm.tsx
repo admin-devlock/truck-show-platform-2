@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
+import { auditAction } from "@/lib/activity";
+import type { AuditMetadata } from "@/lib/activity";
 
 /**
  * Slide-to-confirm control. The user drags the handle to the far end to confirm a
@@ -16,12 +18,14 @@ export function SlideToConfirm({
   busy = false,
   busyLabel = "Working…",
   icon,
+  auditMetadata,
 }: {
   onConfirm: () => void;
   label?: string;
   busy?: boolean;
   busyLabel?: string;
   icon?: ReactNode; // handle glyph (defaults to a trash icon)
+  auditMetadata?: AuditMetadata;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [x, setX] = useState(0);
@@ -50,6 +54,7 @@ export function SlideToConfirm({
     if (nx >= maxX() - 1) {
       dragging.current = false;
       setDone(true);
+      auditAction(label, auditMetadata, "confirm");
       onConfirm();
     }
   };

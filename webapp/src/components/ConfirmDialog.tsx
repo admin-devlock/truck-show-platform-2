@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { SlideToConfirm } from "./SlideToConfirm";
+import type { AuditMetadata } from "@/lib/activity";
 
 /**
  * Generalised slide-to-confirm dialog for destructive / lossy actions (deleting,
@@ -15,6 +16,7 @@ export function ConfirmDialog({
   confirmLabel = "Slide to confirm",
   busyLabel = "Working…",
   icon,
+  auditMetadata,
   onConfirm,
   onClose,
 }: {
@@ -23,6 +25,7 @@ export function ConfirmDialog({
   confirmLabel?: string;
   busyLabel?: string;
   icon?: ReactNode;
+  auditMetadata?: AuditMetadata;
   onConfirm: () => Promise<void> | void;
   onClose: () => void;
 }) {
@@ -43,12 +46,25 @@ export function ConfirmDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 px-4" onClick={busy ? undefined : onClose}>
+    <div
+      className="fixed inset-0 z-[60] grid place-items-center bg-black/30 px-4"
+      data-audit-click="true"
+      data-audit-action="Close confirmation dialog"
+      onClick={busy ? undefined : onClose}
+    >
       <div className="card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-medium mb-1">{title}</h2>
         <div className="text-sm text-[color:var(--color-ink-soft)] mb-5 leading-relaxed">{message}</div>
 
-        <SlideToConfirm key={attempt} onConfirm={run} busy={busy} label={confirmLabel} busyLabel={busyLabel} icon={icon} />
+        <SlideToConfirm
+          key={attempt}
+          onConfirm={run}
+          busy={busy}
+          label={confirmLabel}
+          busyLabel={busyLabel}
+          icon={icon}
+          auditMetadata={auditMetadata}
+        />
 
         <div className="flex justify-end mt-5">
           <button onClick={onClose} disabled={busy} className="btn btn-ghost">

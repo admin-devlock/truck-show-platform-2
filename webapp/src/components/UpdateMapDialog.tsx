@@ -87,7 +87,12 @@ export function UpdateMapDialog({ maps, onClose }: { maps: MapDoc[]; onClose: ()
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={dismiss}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
+      data-audit-click="true"
+      data-audit-action="Close map update dialog"
+      onClick={dismiss}
+    >
       <div className="card w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto" onClick={(event) => event.stopPropagation()}>
         <h2 className="text-lg font-medium">Create map from updated CAD</h2>
         <p className="text-xs text-[color:var(--color-ink-soft)] mt-1 mb-5 leading-relaxed">
@@ -138,6 +143,7 @@ export function UpdateMapDialog({ maps, onClose }: { maps: MapDoc[]; onClose: ()
         <button
           disabled={!!busy}
           onClick={() => fileRef.current?.click()}
+          data-audit-action="Choose updated CAD file"
           className="w-full border border-dashed border-[color:var(--color-line)] rounded-md px-3 py-5 text-sm text-[color:var(--color-ink-soft)] hover:bg-[#f8f9fa]"
         >
           {file ? <span className="text-[color:var(--color-ink)]">{file.name}</span> : "Click to choose a .dwg file"}

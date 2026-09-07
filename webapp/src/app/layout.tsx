@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
+import { ActivityLogger } from "@/components/ActivityLogger";
 
 export const metadata: Metadata = {
   title: "Truck Show Platform",
@@ -15,7 +16,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <ActivityLogger />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

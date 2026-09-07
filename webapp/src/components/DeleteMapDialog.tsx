@@ -15,6 +15,7 @@ export function DeleteMapDialog({ map, onClose }: { map: MapDoc; onClose: () => 
       }
       confirmLabel="Slide to delete"
       busyLabel="Deleting…"
+      auditMetadata={{ relatedMapId: map.id }}
       onConfirm={async () => {
         await deleteMap(map.id);
         onClose();
