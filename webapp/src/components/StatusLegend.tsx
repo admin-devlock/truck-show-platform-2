@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Booth } from "./PanZoom";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
+
+const MINIMIZED_STORAGE_KEY = "truckshow.statusLegend.minimized";
 
 /**
  * Floating legend shown while a status type is the map's highlight lens. Lists the
@@ -21,6 +23,28 @@ export function StatusLegend({
   onClear: () => void;
 }) {
   const [minimized, setMinimized] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(MINIMIZED_STORAGE_KEY);
+      if (saved !== null) setMinimized(saved === "true");
+    } catch {
+      // Storage can be unavailable in privacy-restricted browsers; the legend still
+      // works for the current page in that case.
+    }
+  }, []);
+
+  const toggleMinimized = () => {
+    setMinimized((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(MINIMIZED_STORAGE_KEY, String(next));
+      } catch {
+        // Keep the in-memory toggle working even if persistence is unavailable.
+      }
+      return next;
+    });
+  };
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     let none = 0;
@@ -41,7 +65,7 @@ export function StatusLegend({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => setMinimized((value) => !value)}
+            onClick={toggleMinimized}
             aria-label={minimized ? "Expand status legend" : "Minimize status legend"}
             aria-expanded={!minimized}
             title={minimized ? "Expand" : "Minimize"}
