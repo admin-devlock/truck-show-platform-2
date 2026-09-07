@@ -11,6 +11,7 @@ import {
   type CsvBoothRow,
 } from "@/lib/export";
 import { downloadMapBackup } from "@/lib/backup";
+import { auditAction } from "@/lib/activity";
 
 type Fmt = "svg" | "png" | "pdf" | "csv";
 
@@ -66,6 +67,7 @@ export function ExportDialog({
           downloadBlob(await svgToPdfBlob(svg), `${base}.pdf`);
         }
       }
+      auditAction("Export map", { mapId: map.id, format: fmt }, "export");
       onClose();
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
@@ -75,12 +77,7 @@ export function ExportDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
-      data-audit-click="true"
-      data-audit-action="Close export dialog"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4" onClick={onClose}>
       <div className="card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-medium mb-1">Download map</h2>
         <p className="text-sm text-[color:var(--color-ink-soft)] mb-5">

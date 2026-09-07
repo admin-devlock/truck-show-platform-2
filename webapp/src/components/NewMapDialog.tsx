@@ -30,8 +30,6 @@ export function NewMapDialog({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
-      data-audit-click="true"
-      data-audit-action="Close new map dialog"
       onClick={busy ? undefined : onClose} // not dismissible mid-upload — it would navigate later anyway
     >
       <div className="card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
@@ -53,7 +51,6 @@ export function NewMapDialog({ onClose }: { onClose: () => void }) {
         </label>
         <button
           onClick={() => inputRef.current?.click()}
-          data-audit-action="Choose CAD file"
           className="w-full border border-dashed border-[color:var(--color-line)] rounded-md px-3 py-6 text-sm text-[color:var(--color-ink-soft)] hover:bg-[#f8f9fa] hover:border-[color:var(--color-accent)] transition"
         >
           {file ? (

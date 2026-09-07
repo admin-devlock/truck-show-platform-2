@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { getMapBackup, restoreMap, type MapBackup, type MapDoc } from "@/lib/maps";
 import type { Identity } from "@/lib/auth";
 import { downloadBlob, safeName } from "@/lib/export";
+import { auditAction } from "@/lib/activity";
 
 /** Download a full, self-contained backup of a map (all levels + data). */
 export async function downloadMapBackup(map: MapDoc) {
   const backup = await getMapBackup(map);
   const json = JSON.stringify(backup, null, 2);
   downloadBlob(new Blob([json], { type: "application/json" }), `${safeName(map.title)}.backup.json`);
+  auditAction("Download map backup", { mapId: map.id }, "export");
 }
 
 /** Push a backup snapshot to the host filesystem (off-Firestore fallback store). */
@@ -36,7 +38,9 @@ export async function restoreFromFile(user: Identity, file: File): Promise<strin
   } catch {
     throw new Error("That file isn’t valid JSON.");
   }
-  return await restoreMap(user, parsed);
+  const mapId = await restoreMap(user, parsed);
+  auditAction("Restore map from backup", { mapId });
+  return mapId;
 }
 
 /**

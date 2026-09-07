@@ -209,7 +209,6 @@ export function BoothInfoPanel({
           </label>
           <input
             value={name}
-            data-audit-action="Exhibitor"
             onChange={(e) => setName(e.target.value)}
             onBlur={saveName}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}

@@ -187,7 +187,6 @@ export function SearchPanel({
                   <li key={i}>
                     <button
                       onClick={() => onPick(i)}
-                      data-audit-action="Open search result"
                       className="w-full text-left px-3 py-2 hover:bg-[#f8f9fa] flex items-center gap-2.5"
                     >
                       <span className="shrink-0 inline-grid place-items-center min-w-[2.75rem] h-7 px-1.5 rounded bg-[#f1f3f4] text-xs font-semibold tabular-nums">

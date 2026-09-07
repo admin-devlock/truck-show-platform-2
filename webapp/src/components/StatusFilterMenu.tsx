@@ -110,12 +110,7 @@ export function StatusFilterMenu({
 
       {open && pos && (
         <>
-          <div
-            className="fixed inset-0 z-40"
-            data-audit-click="true"
-            data-audit-action="Close status filters"
-            onClick={() => setOpen(false)}
-          />
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
             style={{ top: pos.top, left: pos.left, width: MENU_W }}
             className="fixed z-50 card p-1 max-h-[18rem] overflow-auto"

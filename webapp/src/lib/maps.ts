@@ -28,6 +28,7 @@ import {
   type TransferConflict,
 } from "./remap";
 import { activeStatusTypeIds as normalizeActiveStatusTypeIds } from "./statuses";
+import { auditAction } from "./activity";
 
 export type MapStatus = "processing" | "ready" | "error";
 
@@ -97,6 +98,7 @@ export async function createMapFromSvg(
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  auditAction("Create sample map", { mapId: docRef.id });
   return docRef.id;
 }
 
@@ -156,6 +158,7 @@ export async function createMapFromUpload(
   // Convert in the background so the caller can navigate straight to the map; the
   // viewer subscribes to the doc and flips from "Converting…" to the floorplan live.
   void convertAndStore(docRef.id, file);
+  auditAction("Create map from CAD", { mapId: docRef.id });
   return docRef.id;
 }
 
@@ -183,6 +186,7 @@ async function convertAndStore(id: string, file: File) {
 
 export async function renameMap(id: string, title: string) {
   await updateDoc(doc(db, "maps", id), { title, updatedAt: serverTimestamp() });
+  auditAction("Rename map", { mapId: id });
 }
 
 /** Delete a map and all its subdocs (levels, renders, meta). Presence docs expire. */
@@ -201,6 +205,7 @@ export async function deleteMap(id: string) {
   await deleteDoc(boothMeta(id)).catch(() => {});
   await deleteDoc(doc(db, "maps", id, "meta", "search")).catch(() => {});
   await deleteDoc(doc(db, "maps", id));
+  auditAction("Delete map", { mapId: id });
 }
 
 // ---------------------------------------------------------------------------
@@ -303,15 +308,18 @@ export async function splitBooth(
   }
   await setDoc(boothMeta(id), {}, { merge: true }); // ensure doc exists
   await updateDoc(boothMeta(id), update);
+  auditAction("Split booth", { mapId: id, boothNumber: sourceNumber });
 }
 
 /** Undo a split, restoring the original booth. */
 export async function unsplitBooth(id: string, sourceNumber: string) {
   await updateDoc(boothMeta(id), { [`splits.${sourceNumber}`]: deleteField() });
+  auditAction("Merge split booth", { mapId: id, boothNumber: sourceNumber });
 }
 
 export async function setBoothExhibitor(id: string, boothNumber: string, exhibitor: string) {
   await setDoc(boothMeta(id), { assignments: { [boothNumber]: { exhibitor } } }, { merge: true });
+  auditAction("Change booth exhibitor", { mapId: id, boothNumber });
 }
 
 export async function setBoothStatus(
@@ -325,11 +333,17 @@ export async function setBoothStatus(
     { assignments: { [boothNumber]: { statusIdsByType: { [statusTypeId]: statusId } } } },
     { merge: true },
   );
+  auditAction(statusId ? "Set booth status" : "Clear booth status", {
+    mapId: id,
+    boothNumber,
+    statusTypeId,
+  });
 }
 
 /** Per-booth label metric: show area (m², the default) or width × depth on the map. */
 export async function setBoothLabelMode(id: string, boothNumber: string, labelMode: "area" | "dims") {
   await setDoc(boothMeta(id), { assignments: { [boothNumber]: { labelMode } } }, { merge: true });
+  auditAction("Change booth label mode", { mapId: id, boothNumber, labelMode });
 }
 
 /**
@@ -357,10 +371,12 @@ export async function setBoothKind(
     b.kind = kind;
     tx.update(ref, { boothsJson: JSON.stringify(parsed) });
   });
+  auditAction("Change booth type", { mapId: id, boothNumber, kind });
 }
 
 export async function saveStatusTypes(id: string, statusTypes: StatusType[]) {
   await setDoc(boothMeta(id), { statusTypes }, { merge: true });
+  auditAction("Update status definitions", { mapId: id, statusTypeCount: statusTypes.length });
 }
 
 export async function setActiveStatusTypes(id: string, activeStatusTypeIds: string[]) {
@@ -443,6 +459,7 @@ export async function importExhibitors(id: string, mapping: Record<string, strin
   }
   if (Object.keys(assignments).length === 0) return;
   await setDoc(boothMeta(id), { assignments }, { merge: true });
+  auditAction("Import exhibitors", { mapId: id, boothCount: Object.keys(assignments).length });
 }
 
 /**
@@ -477,6 +494,12 @@ export async function copyAssignmentsFromMap(
       { merge: true },
     );
   }
+  auditAction("Copy booth assignments", {
+    mapId: targetId,
+    sourceMapId: sourceId,
+    boothCount: Object.keys(assignments).length,
+    includedStatuses: includeStatuses,
+  });
   return Object.keys(assignments).length;
 }
 
@@ -573,6 +596,7 @@ export async function addLevel(map: MapDoc, name: string, file: File): Promise<s
   });
   await updateDoc(doc(db, "maps", map.id), { updatedAt: serverTimestamp() });
   void convertAndStoreLevel(map.id, levelId, file);
+  auditAction("Add map level", { mapId: map.id, levelId });
   return levelId;
 }
 
@@ -584,6 +608,7 @@ export async function replaceLevelCad(map: MapDoc, levelId: string, file: File) 
     status: "processing" as MapStatus,
   });
   void convertAndStoreLevel(map.id, levelId, file);
+  auditAction("Replace level CAD", { mapId: map.id, levelId });
 }
 
 async function convertAndStoreLevel(mapId: string, levelId: string, file: File) {
@@ -608,6 +633,7 @@ async function convertAndStoreLevel(mapId: string, levelId: string, file: File) 
 
 export async function renameLevel(mapId: string, levelId: string, name: string) {
   await updateDoc(levelDoc(mapId, levelId), { name });
+  auditAction("Rename map level", { mapId, levelId });
 }
 
 // ---------------------------------------------------------------------------
@@ -920,7 +946,13 @@ export async function createMapFromRevision(
   title: string,
   prepared: PreparedMapRevision,
 ): Promise<string> {
-  return restoreMap(user, prepared.backup, title.trim() || `${prepared.sourceTitle} (updated)`);
+  const mapId = await restoreMap(
+    user,
+    prepared.backup,
+    title.trim() || `${prepared.sourceTitle} (updated)`,
+  );
+  auditAction("Create map from updated CAD", { mapId });
+  return mapId;
 }
 
 /** Rebuild a map from a backup JSON. Creates a fresh map doc + all levels/renders/data. */
@@ -999,7 +1031,9 @@ export async function restoreMap(
  *  splits) into a new "<title> (copy)" map. Returns the new map id. */
 export async function duplicateMap(user: Identity, map: MapDoc): Promise<string> {
   const backup = await getMapBackup(map);
-  return restoreMap(user, backup, `${map.title} (copy)`);
+  const mapId = await restoreMap(user, backup, `${map.title} (copy)`);
+  auditAction("Duplicate map", { mapId, sourceMapId: map.id });
+  return mapId;
 }
 
 /** Remove a level (its render). Refuses to remove the last level. Map-wide assignments
@@ -1011,4 +1045,5 @@ export async function removeLevel(map: MapDoc, levelId: string) {
   await deleteDoc(doc(db, "maps", map.id, "render", levelId)).catch(() => {});
   await deleteDoc(levelDoc(map.id, levelId));
   await updateDoc(doc(db, "maps", map.id), { updatedAt: serverTimestamp() });
+  auditAction("Remove map level", { mapId: map.id, levelId });
 }

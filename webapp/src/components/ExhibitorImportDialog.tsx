@@ -36,8 +36,6 @@ export function ExhibitorImportDialog({
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/30 px-4"
-      data-audit-click="true"
-      data-audit-action="Close exhibitor import"
       onClick={dirty ? undefined : onClose}
     >
       <div className="card w-full max-w-lg p-6 max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
