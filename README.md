@@ -80,6 +80,30 @@ The script signs in anonymously, so Anonymous Authentication must be enabled for
 Firebase project and the signed-in user must be allowed to read the data by the
 Firestore rules.
 
+## Export activity for analysis
+
+The activity audit trail has a read-only local exporter. By default it pulls only
+the latest 2,000 events to keep Firestore reads bounded, then writes analysis-ready
+JSON, CSV, and an aggregate `summary.json` into an ignored, timestamped directory:
+
+```bash
+cd webapp
+npm run export:activity
+```
+
+Common filters can be combined. They are applied after the bounded pull, so add
+`--all` when a filter must cover the complete history:
+
+```bash
+npm run export:activity -- --map MAP_ID --since 2026-09-01
+npm run export:activity -- --user FIREBASE_UID --limit 5000
+npm run export:activity -- --all --output /path/to/private-export
+```
+
+Run `npm run export:activity -- --help` for every option. Export files are ignored by
+Git because they can contain user and operational data. The command only reads
+Firestore; it never updates or deletes audit records.
+
 ## Container / cloud deploy
 
 The [`Dockerfile`](Dockerfile) bundles the webapp **and** the conversion toolchain

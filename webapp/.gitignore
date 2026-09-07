@@ -12,3 +12,6 @@ npm-debug.log*
 
 # Server-side map backups (recoverable fallback store, written at runtime).
 /backups
+
+# Local audit exports can contain user and operational data.
+/activity-exports
