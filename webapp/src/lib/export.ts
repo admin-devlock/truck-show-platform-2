@@ -3,6 +3,7 @@
 import type { Booth } from "@/components/PanZoom";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
 import { boothKindLabel } from "@/lib/booths";
+import { statusIdForType } from "@/lib/statuses";
 
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -193,11 +194,10 @@ export function boothsToCsv(
 
   for (const { booth: b, levelName } of rows_) {
     const a = b.number ? assignments[b.number] : undefined;
-    const chosen = a?.statusId ? statusName.get(a.statusId) ?? "" : "";
-    // We only track one status per booth; show it under whichever type owns it.
-    const statusCols = statusTypes.map((t) =>
-      a?.statusId && t.statuses.some((s) => s.id === a.statusId) ? chosen : "",
-    );
+    const statusCols = statusTypes.map((type) => {
+      const statusId = statusIdForType(a, type);
+      return statusId ? statusName.get(statusId) ?? "" : "";
+    });
     rows.push(
       [
         csvCell(b.number),

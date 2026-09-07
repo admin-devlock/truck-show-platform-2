@@ -27,6 +27,7 @@ import {
   type RemapResult,
   type TransferConflict,
 } from "./remap";
+import { activeStatusTypeIds as normalizeActiveStatusTypeIds } from "./statuses";
 
 export type MapStatus = "processing" | "ready" | "error";
 
@@ -214,7 +215,11 @@ export type BoothStatus = { id: string; name: string; color: string };
 export type StatusType = { id: string; name: string; statuses: BoothStatus[] };
 export type BoothAssignment = {
   exhibitor?: string;
+  /** Legacy single-status field. Kept readable so existing maps need no migration. */
   statusId?: string | null;
+  /** One independently selected status per status type. Null explicitly clears a
+   * legacy status for that type without rewriting historical data. */
+  statusIdsByType?: Record<string, string | null>;
   // What the small metric line on the booth's map label shows: its area (default)
   // or its width × depth. Absent = "area".
   labelMode?: "area" | "dims";
@@ -236,12 +241,14 @@ export type BoothSplit = { parts: SplitPart[] };
 export type BoothData = {
   assignments: Record<string, BoothAssignment>;
   statusTypes: StatusType[];
+  activeStatusTypeIds: string[];
+  /** Legacy visibility field retained in backups and writes for old clients. */
   activeStatusTypeId: string | null;
   splits: Record<string, BoothSplit>;
 };
 
 // Status types AND booth assignments (exhibitor + status) are MAP-WIDE: one exhibitor
-// and one status per booth NUMBER across the whole map (numbers are unique across the
+// and one status per type per booth NUMBER across the whole map (numbers are unique across the
 // levels), so search / filtering / counts all span every level. It all lives in the
 // single collaborative doc `maps/{id}/meta/booths`.
 const boothMeta = (id: string) => doc(db, "maps", id, "meta", "booths");
@@ -251,10 +258,13 @@ export const DEFAULT_LEVEL_ID = "main";
 export function subscribeBoothData(id: string, cb: (d: BoothData) => void) {
   return onSnapshot(boothMeta(id), (snap) => {
     const d = (snap.data() as Partial<BoothData>) || {};
+    const statusTypes = d.statusTypes ?? [];
+    const activeIds = normalizeActiveStatusTypeIds(d, statusTypes);
     cb({
       assignments: d.assignments ?? {},
-      statusTypes: d.statusTypes ?? [],
-      activeStatusTypeId: d.activeStatusTypeId ?? null,
+      statusTypes,
+      activeStatusTypeIds: activeIds,
+      activeStatusTypeId: activeIds[0] ?? null,
       splits: d.splits ?? {},
     });
   });
@@ -277,10 +287,18 @@ export async function splitBooth(
     [`splits.${sourceNumber}`]: { parts },
   };
   // Carry the source's exhibitor/status onto the first half so nothing is lost.
-  if (currentAssignment && (currentAssignment.exhibitor || currentAssignment.statusId)) {
+  if (
+    currentAssignment &&
+    (currentAssignment.exhibitor ||
+      currentAssignment.statusId ||
+      Object.keys(currentAssignment.statusIdsByType ?? {}).length)
+  ) {
     update[`assignments.${parts[0].number}`] = {
       ...(currentAssignment.exhibitor ? { exhibitor: currentAssignment.exhibitor } : {}),
       ...(currentAssignment.statusId ? { statusId: currentAssignment.statusId } : {}),
+      ...(currentAssignment.statusIdsByType
+        ? { statusIdsByType: { ...currentAssignment.statusIdsByType } }
+        : {}),
     };
   }
   await setDoc(boothMeta(id), {}, { merge: true }); // ensure doc exists
@@ -296,8 +314,17 @@ export async function setBoothExhibitor(id: string, boothNumber: string, exhibit
   await setDoc(boothMeta(id), { assignments: { [boothNumber]: { exhibitor } } }, { merge: true });
 }
 
-export async function setBoothStatus(id: string, boothNumber: string, statusId: string | null) {
-  await setDoc(boothMeta(id), { assignments: { [boothNumber]: { statusId } } }, { merge: true });
+export async function setBoothStatus(
+  id: string,
+  boothNumber: string,
+  statusTypeId: string,
+  statusId: string | null,
+) {
+  await setDoc(
+    boothMeta(id),
+    { assignments: { [boothNumber]: { statusIdsByType: { [statusTypeId]: statusId } } } },
+    { merge: true },
+  );
 }
 
 /** Per-booth label metric: show area (m², the default) or width × depth on the map. */
@@ -336,8 +363,17 @@ export async function saveStatusTypes(id: string, statusTypes: StatusType[]) {
   await setDoc(boothMeta(id), { statusTypes }, { merge: true });
 }
 
-export async function setActiveStatusType(id: string, activeStatusTypeId: string | null) {
-  await setDoc(boothMeta(id), { activeStatusTypeId }, { merge: true });
+export async function setActiveStatusTypes(id: string, activeStatusTypeIds: string[]) {
+  const uniqueIds = [...new Set(activeStatusTypeIds)];
+  await setDoc(
+    boothMeta(id),
+    {
+      activeStatusTypeIds: uniqueIds,
+      // Keep an old client usable: it will display the highest-priority type.
+      activeStatusTypeId: uniqueIds[0] ?? null,
+    },
+    { merge: true },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -385,10 +421,13 @@ export async function setSearchState(
 export async function getBoothDataOnce(id: string): Promise<BoothData> {
   const snap = await getDoc(boothMeta(id));
   const d = (snap.data() as Partial<BoothData>) || {};
+  const statusTypes = d.statusTypes ?? [];
+  const activeIds = normalizeActiveStatusTypeIds(d, statusTypes);
   return {
     assignments: d.assignments ?? {},
-    statusTypes: d.statusTypes ?? [],
-    activeStatusTypeId: d.activeStatusTypeId ?? null,
+    statusTypes,
+    activeStatusTypeIds: activeIds,
+    activeStatusTypeId: activeIds[0] ?? null,
     splits: d.splits ?? {},
   };
 }
@@ -422,13 +461,19 @@ export async function copyAssignmentsFromMap(
     const next: BoothAssignment = {};
     if (a.exhibitor?.trim()) next.exhibitor = a.exhibitor.trim();
     if (includeStatuses && a.statusId) next.statusId = a.statusId;
+    if (includeStatuses && a.statusIdsByType)
+      next.statusIdsByType = { ...a.statusIdsByType };
     if (Object.keys(next).length) assignments[num] = next;
   }
   await setDoc(boothMeta(targetId), { assignments }, { merge: true });
   if (includeStatuses) {
     await setDoc(
       boothMeta(targetId),
-      { statusTypes: source.statusTypes, activeStatusTypeId: source.activeStatusTypeId },
+      {
+        statusTypes: source.statusTypes,
+        activeStatusTypeIds: source.activeStatusTypeIds,
+        activeStatusTypeId: source.activeStatusTypeIds[0] ?? null,
+      },
       { merge: true },
     );
   }
@@ -591,6 +636,7 @@ export type MapBackup = {
   title: string;
   statusTypes: StatusType[];
   activeStatusTypeId: string | null;
+  activeStatusTypeIds?: string[];
   assignments: Record<string, BoothAssignment>; // map-wide, keyed by booth number
   splits: Record<string, BoothSplit>;
   levels: LevelBackup[];
@@ -632,6 +678,8 @@ export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
   const levels = await getLevelsOnce(map);
   const metaSnap = await getDoc(boothMeta(map.id));
   const meta = (metaSnap.data() as Partial<BoothData>) || {};
+  const statusTypes = meta.statusTypes ?? [];
+  const activeIds = normalizeActiveStatusTypeIds(meta, statusTypes);
 
   const levelBackups: LevelBackup[] = await Promise.all(
     levels.map(async (lvl) => {
@@ -652,8 +700,9 @@ export async function getMapBackup(map: MapDoc): Promise<MapBackup> {
     version: 1,
     exportedAt: new Date().toISOString(),
     title: map.title,
-    statusTypes: meta.statusTypes ?? [],
-    activeStatusTypeId: meta.activeStatusTypeId ?? null,
+    statusTypes,
+    activeStatusTypeIds: activeIds,
+    activeStatusTypeId: activeIds[0] ?? null,
     assignments: meta.assignments ?? {},
     splits: meta.splits ?? {},
     levels: levelBackups.sort((a, b) => a.order - b.order),
@@ -914,7 +963,9 @@ export async function restoreMap(
   }
   batch.set(boothMeta(mapId), {
     statusTypes: backup.statusTypes ?? [],
-    activeStatusTypeId: backup.activeStatusTypeId ?? null,
+    activeStatusTypeIds: normalizeActiveStatusTypeIds(backup, backup.statusTypes ?? []),
+    activeStatusTypeId:
+      normalizeActiveStatusTypeIds(backup, backup.statusTypes ?? [])[0] ?? null,
     assignments,
     splits,
   });

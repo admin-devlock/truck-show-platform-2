@@ -22,7 +22,7 @@ import {
   subscribeLevels,
   subscribeSearch,
   setSearchState,
-  setActiveStatusType,
+  setActiveStatusTypes,
   getRenderBooths,
   renameMap,
   type MapDoc,
@@ -56,6 +56,7 @@ function Viewer({ id }: { id: string }) {
   const [boothData, setBoothData] = useState<BoothData>({
     assignments: {},
     statusTypes: [],
+    activeStatusTypeIds: [],
     activeStatusTypeId: null,
     splits: {},
   });
@@ -246,9 +247,10 @@ function Viewer({ id }: { id: string }) {
   );
 
   const selectedBooth = selected != null ? booths?.[selected] : undefined;
-  const activeStatusType = boothData.activeStatusTypeId
-    ? boothData.statusTypes.find((t) => t.id === boothData.activeStatusTypeId) ?? null
-    : null;
+  const activeStatusTypes = boothData.activeStatusTypeIds.flatMap((id) => {
+    const type = boothData.statusTypes.find((candidate) => candidate.id === id);
+    return type ? [type] : [];
+  });
 
   // Booths for EVERY level (one-shot from each render doc), so search / counts span the
   // whole map. The active level uses the live `booths` (fresher); others the loaded set.
@@ -396,7 +398,7 @@ function Viewer({ id }: { id: string }) {
             onSelect={setSelected}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
-            activeStatusTypeId={showSearch ? null : boothData.activeStatusTypeId}
+            activeStatusTypeIds={showSearch ? [] : boothData.activeStatusTypeIds}
             highlight={searchMatches}
             cursors={cursors}
             onCursorMove={onCursorMove}
@@ -412,7 +414,7 @@ function Viewer({ id }: { id: string }) {
             onSelect={setSelected}
             assignments={boothData.assignments}
             statusTypes={boothData.statusTypes}
-            activeStatusTypeId={showSearch ? null : boothData.activeStatusTypeId}
+            activeStatusTypeIds={showSearch ? [] : boothData.activeStatusTypeIds}
             highlight={searchMatches}
             cursors={cursors}
             onCursorMove={onCursorMove}
@@ -441,12 +443,13 @@ function Viewer({ id }: { id: string }) {
             one level — those booths share one exhibitor/status assignment.
           </div>
         )}
-        {!showSearch && activeStatusType && allBooths.length > 0 && (
+        {!showSearch && activeStatusTypes.length > 0 && allBooths.length > 0 && (
           <StatusLegend
-            type={activeStatusType}
+            types={activeStatusTypes}
             booths={allBooths}
             assignments={boothData.assignments}
-            onClear={() => setActiveStatusType(id, null)}
+            onClear={() => setActiveStatusTypes(id, [])}
+            onReorder={(typeIds) => setActiveStatusTypes(id, typeIds)}
           />
         )}
         {showSearch && (
@@ -519,7 +522,7 @@ function Viewer({ id }: { id: string }) {
           <StatusManager
             mapId={id}
             statusTypes={boothData.statusTypes}
-            activeStatusTypeId={boothData.activeStatusTypeId}
+            activeStatusTypeIds={boothData.activeStatusTypeIds}
             assignments={boothData.assignments}
             onClose={() => setShowStatuses(false)}
           />

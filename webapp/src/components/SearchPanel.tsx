@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Booth } from "./PanZoom";
 import type { BoothAssignment, StatusType, BoothKindFilter } from "@/lib/maps";
 import { StatusFilterMenu, NO_STATUS_ID } from "./StatusFilterMenu";
+import { assignedStatusIds } from "@/lib/statuses";
 
 /** A booth in the cross-level search index, tagged with the level it lives on. */
 export type SearchBooth = {
@@ -76,10 +77,15 @@ export function SearchPanel({
       const num = (b.number ?? "").toLowerCase();
       const name = (b.number ? assignments[b.number]?.exhibitor : "")?.toLowerCase() ?? "";
       const textOk = !term || num.includes(term) || name.includes(term);
-      const sid = b.number ? assignments[b.number]?.statusId : undefined;
-      // Empty filter = all on. Otherwise a booth passes iff its status (or the
-      // "no status" category) is among the still-checked ones.
-      const statusOk = filterSet.size === 0 || filterSet.has(sid ?? NO_STATUS_ID);
+      const statusIds = b.number
+        ? assignedStatusIds(assignments[b.number], statusTypes)
+        : [];
+      // With multiple types, any selected assigned status is a match. "No status"
+      // means the booth has no status in any type.
+      const statusOk =
+        filterSet.size === 0 ||
+        statusIds.some((id) => filterSet.has(id)) ||
+        (statusIds.length === 0 && filterSet.has(NO_STATUS_ID));
       // Booth type: split halves count as their (shell) parent; label-only records
       // match neither type, so they drop out once the user narrows by type.
       const effKind = b.kind === "split" ? "built" : b.kind;
@@ -91,7 +97,7 @@ export function SearchPanel({
       const nb = booths[b].booth.number ?? "";
       return na.localeCompare(nb, undefined, { numeric: true });
     });
-  }, [q, filterSet, kindSet, booths, assignments]);
+  }, [q, filterSet, kindSet, booths, assignments, statusTypes]);
 
   useEffect(() => {
     onResults(matches);
@@ -173,7 +179,10 @@ export function SearchPanel({
                 const sb = booths[i];
                 const b = sb.booth;
                 const a = b.number ? assignments[b.number] : undefined;
-                const st = a?.statusId ? statusInfo.get(a.statusId) : undefined;
+                const statuses = assignedStatusIds(a, statusTypes).flatMap((statusId) => {
+                  const status = statusInfo.get(statusId);
+                  return status ? [status] : [];
+                });
                 return (
                   <li key={i}>
                     <button
@@ -195,12 +204,17 @@ export function SearchPanel({
                           {b.width_m != null && `${b.width_m} × ${b.depth_m} m`}
                         </span>
                       </span>
-                      {st && (
-                        <span
-                          className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full text-white"
-                          style={{ background: st.color }}
-                        >
-                          {st.name}
+                      {statuses.length > 0 && (
+                        <span className="shrink-0 flex flex-col items-end gap-1">
+                          {statuses.map((status, statusIndex) => (
+                            <span
+                              key={`${status.name}-${statusIndex}`}
+                              className="text-[10px] px-1.5 py-0.5 rounded-full text-white max-w-28 truncate"
+                              style={{ background: status.color }}
+                            >
+                              {status.name}
+                            </span>
+                          ))}
                         </span>
                       )}
                     </button>

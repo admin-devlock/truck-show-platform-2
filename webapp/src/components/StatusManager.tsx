@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   saveStatusTypes,
-  setActiveStatusType,
+  setActiveStatusTypes,
   getBoothDataOnce,
   subscribeMaps,
   type StatusType,
@@ -11,6 +11,7 @@ import {
   type BoothAssignment,
   type MapDoc,
 } from "@/lib/maps";
+import { assignedStatusIds } from "@/lib/statuses";
 import { ConfirmDialog, OverwriteGlyph } from "./ConfirmDialog";
 
 const PALETTE = [
@@ -22,13 +23,13 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 export function StatusManager({
   mapId,
   statusTypes,
-  activeStatusTypeId,
+  activeStatusTypeIds,
   assignments,
   onClose,
 }: {
   mapId: string;
   statusTypes: StatusType[];
-  activeStatusTypeId: string | null;
+  activeStatusTypeIds: string[];
   assignments: Record<string, BoothAssignment>;
   onClose: () => void;
 }) {
@@ -42,8 +43,8 @@ export function StatusManager({
   // Unsaved edits? Then clicking the backdrop must NOT dismiss — Cancel or Save only.
   const initialTypesJson = useRef(JSON.stringify(statusTypes));
   const dirty = JSON.stringify(types) !== initialTypesJson.current;
-  // Which status type's colours are shown on the map — one at a time (or none).
-  const [shownId, setShownId] = useState<string | null>(activeStatusTypeId);
+  // Visible types are ordered: the first one wins when a booth has multiple statuses.
+  const [shownIds, setShownIds] = useState<string[]>(activeStatusTypeIds);
   const [busy, setBusy] = useState(false);
 
   // Copy-from-another-map picker.
@@ -58,7 +59,7 @@ export function StatusManager({
   const addType = () =>
     update([...types, { id: uid(), name: "New status type", statuses: [] }]);
   const removeType = (ti: number) => {
-    if (types[ti].id === shownId) setShownId(null);
+    setShownIds((ids) => ids.filter((id) => id !== types[ti].id));
     update(types.filter((_, i) => i !== ti));
   };
   const renameType = (ti: number, name: string) =>
@@ -149,9 +150,9 @@ export function StatusManager({
   const persist = async () => {
     const finalTypes = withRemoteAdds();
     await saveStatusTypes(mapId, finalTypes);
-    // Persist which type's colours are shown (guard against a shown type that was removed).
-    const validShown = finalTypes.some((t) => t.id === shownId) ? shownId : null;
-    await setActiveStatusType(mapId, validShown);
+    // Persist visible types in priority order, excluding any removed type.
+    const validIds = new Set(finalTypes.map((t) => t.id));
+    await setActiveStatusTypes(mapId, shownIds.filter((id) => validIds.has(id)));
   };
   const doSave = async () => {
     setBusy(true);
@@ -169,19 +170,22 @@ export function StatusManager({
     const removed = statusTypes.flatMap((t) => t.statuses).filter((s) => !keptIds.has(s.id));
     const removedIds = new Set(removed.map((s) => s.id));
     const count = removed.length
-      ? Object.values(assignments).filter((a) => a.statusId && removedIds.has(a.statusId)).length
+      ? Object.values(assignments).filter((a) =>
+          assignedStatusIds(a, statusTypes).some((id) => removedIds.has(id)),
+        ).length
       : 0;
     if (count > 0) setConfirm({ names: removed.map((s) => s.name), count });
     else doSave();
   };
 
-  // Single-select: showing one type's colours unselects any other. Applies LIVE —
-  // the map lens changes immediately, no Save needed. (A brand-new type still needs
-  // Save first: until its statuses exist in Firestore the lens has nothing to colour.)
+  // Visibility applies live. Newly enabled types go below the currently visible ones;
+  // their priority can then be reordered directly in the map legend.
   const toggleShown = (id: string) => {
-    const next = shownId === id ? null : id;
-    setShownId(next);
-    void setActiveStatusType(mapId, next).catch(() => {});
+    const next = shownIds.includes(id)
+      ? shownIds.filter((shown) => shown !== id)
+      : [...shownIds, id];
+    setShownIds(next);
+    void setActiveStatusTypes(mapId, next).catch(() => {});
   };
 
   return (
@@ -221,10 +225,10 @@ export function StatusManager({
                 <button
                   onClick={() => toggleShown(t.id)}
                   disabled={t.statuses.length === 0}
-                  aria-pressed={shownId === t.id}
-                  title="Show this status type’s colours on the map (one type at a time)"
+                  aria-pressed={shownIds.includes(t.id)}
+                  title="Show this status type’s colours on the map"
                   className={`text-xs px-2 py-1 rounded-md border flex items-center gap-1 disabled:opacity-40 ${
-                    shownId === t.id
+                    shownIds.includes(t.id)
                       ? "bg-[color:var(--color-accent)] text-white border-[color:var(--color-accent)]"
                       : "text-[color:var(--color-ink-soft)] border-[color:var(--color-line)] hover:bg-[#f1f3f4]"
                   }`}
@@ -233,7 +237,7 @@ export function StatusManager({
                     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
                     <circle cx="12" cy="12" r="3" />
                   </svg>
-                  {shownId === t.id ? "Shown on map" : "Show on map"}
+                  {shownIds.includes(t.id) ? "Shown on map" : "Show on map"}
                 </button>
                 <button
                   onClick={() => removeType(ti)}

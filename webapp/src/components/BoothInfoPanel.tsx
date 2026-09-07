@@ -15,6 +15,7 @@ import {
 } from "@/lib/maps";
 import { splitPolygon, polygonArea, centroid, bbox, type Pt } from "@/lib/geometry";
 import { boothShape, boothKindLabel } from "@/lib/booths";
+import { statusIdForType } from "@/lib/statuses";
 
 /* Slide-in panel: selected booth details + editable exhibitor name and status. */
 export function BoothInfoPanel({
@@ -42,8 +43,6 @@ export function BoothInfoPanel({
     kindEditable && !!booth.number && (booth.kind === "built" || booth.kind === "space_only");
   const [name, setName] = useState(assignment?.exhibitor ?? "");
   useEffect(() => setName(assignment?.exhibitor ?? ""), [assignment?.exhibitor, booth.number]);
-
-  const currentStatusId = assignment?.statusId ?? null;
 
   // Split-a-booth-in-half (adaptability when a booth is subdivided/relabelled).
   // Hidden for now — flip ENABLE_BOOTH_SPLIT to re-expose the "Split booth in half"
@@ -104,8 +103,10 @@ export function BoothInfoPanel({
       setBoothExhibitor(mapId, booth.number!, name.trim());
     }
   };
-  const pickStatus = (id: string | null) => {
-    if (canAssign) setBoothStatus(mapId, booth.number!, currentStatusId === id ? null : id);
+  const pickStatus = (type: StatusType, id: string) => {
+    if (!canAssign) return;
+    const current = statusIdForType(assignment, type);
+    void setBoothStatus(mapId, booth.number!, type.id, current === id ? null : id);
   };
 
   return (
@@ -217,8 +218,9 @@ export function BoothInfoPanel({
 
           {statusTypes.length > 0 && (
             <div className="space-y-3">
-              {statusTypes.map((t) => (
-                <div key={t.id}>
+              {statusTypes.map((t) => {
+                const currentStatusId = statusIdForType(assignment, t);
+                return <div key={t.id}>
                   <div className="text-xs font-medium text-[color:var(--color-ink-soft)] mb-1.5">{t.name}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {t.statuses.map((s) => {
@@ -226,7 +228,7 @@ export function BoothInfoPanel({
                       return (
                         <button
                           key={s.id}
-                          onClick={() => pickStatus(s.id)}
+                          onClick={() => pickStatus(t, s.id)}
                           className="text-xs px-2 py-1 rounded-full border transition"
                           style={{
                             borderColor: s.color,
@@ -239,8 +241,8 @@ export function BoothInfoPanel({
                       );
                     })}
                   </div>
-                </div>
-              ))}
+                </div>;
+              })}
             </div>
           )}
         </>

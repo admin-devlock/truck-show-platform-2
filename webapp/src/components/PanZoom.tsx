@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
+import { statusIdForType } from "@/lib/statuses";
 
 /**
  * Unlimited pan/zoom viewer for an inline SVG.
@@ -156,7 +157,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   onSelect?: (i: number | null) => void;
   assignments?: Record<string, BoothAssignment>;
   statusTypes?: StatusType[];
-  activeStatusTypeId?: string | null;
+  activeStatusTypeIds?: string[];
   highlight?: Set<number> | null;
   cursors?: RemoteCursor[];
   onCursorMove?: (wx: number, wy: number) => void;
@@ -168,7 +169,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   onSelect,
   assignments,
   statusTypes,
-  activeStatusTypeId,
+  activeStatusTypeIds,
   highlight,
   cursors,
   onCursorMove,
@@ -179,13 +180,14 @@ export const PanZoom = forwardRef<PanZoomHandle, {
     (statusTypes ?? []).forEach((t) => t.statuses.forEach((s) => m.set(s.id, s.color)));
     return m;
   }, [statusTypes]);
-  // Status colours are shown only for the SELECTED status type (one at a time). With
-  // none selected, no status colours are drawn.
-  const activeStatusIds = useMemo(() => {
-    if (!activeStatusTypeId) return null;
-    const t = (statusTypes ?? []).find((t) => t.id === activeStatusTypeId);
-    return t ? new Set(t.statuses.map((s) => s.id)) : new Set<string>();
-  }, [statusTypes, activeStatusTypeId]);
+  // Ordered visible types. The first status found supplies the booth colour.
+  const activeStatusTypes = useMemo(() => {
+    const byId = new Map((statusTypes ?? []).map((type) => [type.id, type]));
+    return (activeStatusTypeIds ?? []).flatMap((id) => {
+      const type = byId.get(id);
+      return type ? [type] : [];
+    });
+  }, [statusTypes, activeStatusTypeIds]);
   const hostRef = useRef<HTMLDivElement>(null); // holds the injected <svg>
   const containerRef = useRef<HTMLDivElement>(null);
   const svgElRef = useRef<SVGSVGElement | null>(null);
@@ -371,9 +373,15 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       const [cx, cy] = b.centroid;
       const a = b.number ? assignments?.[b.number] : undefined;
 
-      // status fill — only for the selected status type (none selected = no fills)
-      const col =
-        a?.statusId && activeStatusIds?.has(a.statusId) ? statusColor.get(a.statusId) : undefined;
+      // Status fill — highest-priority visible type with a status wins.
+      let col: string | undefined;
+      for (const type of activeStatusTypes) {
+        const statusId = statusIdForType(a, type);
+        if (statusId) {
+          col = statusColor.get(statusId);
+          if (col) break;
+        }
+      }
       if (col) {
         const poly = document.createElementNS(NS, "polygon");
         poly.setAttribute("points", b.polygon.map((p) => p.join(",")).join(" "));
@@ -474,7 +482,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
 
     svg.insertBefore(statusG, svg.firstChild); // fills under the line work
     svg.appendChild(labelG); // labels on top
-  }, [world, booths, assignments, statusColor, activeStatusIds]);
+  }, [world, booths, assignments, statusColor, activeStatusTypes]);
 
   // Reflect the selected booth onto the hit layer.
   useEffect(() => {

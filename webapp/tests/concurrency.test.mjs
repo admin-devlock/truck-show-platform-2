@@ -55,8 +55,12 @@ const rid = () => Math.random().toString(36).slice(2, 10);
 
 const setBoothExhibitor = (id, lvl, num, name) =>
   setDoc(assignDoc(id, lvl), { assignments: { [num]: { exhibitor: name } } }, { merge: true });
-const setBoothStatus = (id, lvl, num, statusId) =>
-  setDoc(assignDoc(id, lvl), { assignments: { [num]: { statusId } } }, { merge: true });
+const setBoothStatus = (id, lvl, num, typeId, statusId) =>
+  setDoc(
+    assignDoc(id, lvl),
+    { assignments: { [num]: { statusIdsByType: { [typeId]: statusId } } } },
+    { merge: true },
+  );
 const importExhibitors = (id, lvl, mapping) => {
   const assignments = {};
   for (const [num, name] of Object.entries(mapping)) assignments[num] = { exhibitor: name };
@@ -122,20 +126,33 @@ await test("different booths at once -> both survive (no clobber)", async () => 
 await test("name + status on same booth at once -> both stick (deep merge)", async () => {
   await Promise.all([
     setBoothExhibitor(MAP, "main", "C1", "Acme"),
-    setBoothStatus(MAP, "main", "C1", "s-green"),
+    setBoothStatus(MAP, "main", "C1", "offers", "s-green"),
   ]);
   const a = await readAssign(MAP, "main");
-  assert(a.C1?.exhibitor === "Acme" && a.C1?.statusId === "s-green", `merge dropped a field: ${JSON.stringify(a.C1)}`);
+  assert(a.C1?.exhibitor === "Acme" && a.C1?.statusIdsByType?.offers === "s-green", `merge dropped a field: ${JSON.stringify(a.C1)}`);
 });
 
 await test("status set vs status clear(null) on same booth -> one wins, valid", async () => {
-  await setBoothStatus(MAP, "main", "D1", "s1");
+  await setBoothStatus(MAP, "main", "D1", "offers", "s1");
   await Promise.all([
-    setBoothStatus(MAP, "main", "D1", "s2"),
-    setBoothStatus(MAP, "main", "D1", null),
+    setBoothStatus(MAP, "main", "D1", "offers", "s2"),
+    setBoothStatus(MAP, "main", "D1", "offers", null),
   ]);
   const a = await readAssign(MAP, "main");
-  assert(["s2", null].includes(a.D1?.statusId ?? null), `unexpected: ${JSON.stringify(a.D1)}`);
+  assert(["s2", null].includes(a.D1?.statusIdsByType?.offers ?? null), `unexpected: ${JSON.stringify(a.D1)}`);
+});
+
+await test("two status types on the same booth survive concurrent writes", async () => {
+  await Promise.all([
+    setBoothStatus(MAP, "main", "D2", "offers", "offer-sent"),
+    setBoothStatus(MAP, "main", "D2", "compliance", "plan-approved"),
+  ]);
+  const a = await readAssign(MAP, "main");
+  assert(
+    a.D2?.statusIdsByType?.offers === "offer-sent" &&
+      a.D2?.statusIdsByType?.compliance === "plan-approved",
+    `one status type was lost: ${JSON.stringify(a.D2)}`,
+  );
 });
 
 await test("two bulk imports at once -> disjoint keys all kept, overlap = one value", async () => {
@@ -215,11 +232,11 @@ await test("clear a field via deleteField concurrent with a write -> valid", asy
   await setBoothExhibitor(MAP, "main", "I1", "Acme");
   await Promise.all([
     updateDoc(assignDoc(MAP, "main"), { [`assignments.I1`]: deleteField() }),
-    setBoothStatus(MAP, "main", "I1", "s9"),
+    setBoothStatus(MAP, "main", "I1", "offers", "s9"),
   ]);
   const a = await readAssign(MAP, "main");
   // I1 is either gone (delete last) or has just the status (status last). Not corrupt.
-  assert(a.I1 === undefined || a.I1?.statusId === "s9" || a.I1?.exhibitor === undefined,
+  assert(a.I1 === undefined || a.I1?.statusIdsByType?.offers === "s9" || a.I1?.exhibitor === undefined,
     `unexpected: ${JSON.stringify(a.I1)}`);
 });
 
