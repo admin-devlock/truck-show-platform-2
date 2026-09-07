@@ -80,7 +80,7 @@ export function StatusLegend({
       }`}
     >
       <div className={`flex items-center justify-between gap-2 ${minimized ? "" : "mb-1"}`}>
-        <span className="text-xs font-medium truncate">Status priority</span>
+        <span className="text-xs font-medium truncate">Statuses</span>
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
@@ -102,13 +102,8 @@ export function StatusLegend({
 
       {!minimized && (
         <>
-          {types.length > 1 && (
-            <p className="text-[10px] text-[color:var(--color-ink-soft)] mb-2">
-              Drag to reorder · top colour wins
-            </p>
-          )}
           <div className="space-y-2">
-            {types.map((type, index) => {
+            {types.map((type) => {
               const typeCounts = counts.get(type.id);
               return (
                 <section
@@ -135,9 +130,6 @@ export function StatusLegend({
                       <span className="cursor-grab text-[color:var(--color-ink-soft)] select-none" title="Drag to change priority">⠿</span>
                     )}
                     <span className="text-xs font-medium flex-1 truncate" title={type.name}>{type.name}</span>
-                    {types.length > 1 && (
-                      <span className="text-[10px] text-[color:var(--color-ink-soft)] tabular-nums">{index + 1}</span>
-                    )}
                   </div>
                   <ul className="space-y-1">
                     {type.statuses.map((status) => (
