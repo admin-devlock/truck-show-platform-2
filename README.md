@@ -4,6 +4,10 @@ A collaborative web app for managing exhibition floorplans from CAD drawings:
 upload DWG files, render booths, assign exhibitors and statuses, search, export, and
 back up — with live multi-user collaboration.
 
+For a new maintainer or Codex account, start with
+[`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md). Repository-level agent safeguards are in
+[`AGENTS.md`](AGENTS.md).
+
 - **`webapp/`** — the product. Next.js 15 (App Router) + React 19 + Firebase
   (Auth/Firestore), Tailwind v4. A "map" is a collaborative document.
 - **`work/`** — the Python prototyping pipeline the converter was built from

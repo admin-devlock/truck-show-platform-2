@@ -23,3 +23,9 @@ backups/
 .DS_Store
 .env*.local
 *.log
+
+# Local Codex/package artifacts belonging to other work, not this repository
+/.pnpm-store/
+/chicken-round-robin/
+/output/
+/tmp/
