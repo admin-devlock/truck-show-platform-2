@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import type { BoothAssignment, StatusType } from "@/lib/maps";
-import { statusIdForType } from "@/lib/statuses";
+import { assignedStatuses } from "@/lib/statuses";
 
 /**
  * Unlimited pan/zoom viewer for an inline SVG.
@@ -64,7 +64,10 @@ const STROKE_CSS = `
     fill: rgba(26, 86, 219, 0.22);
     stroke: #1a56db; stroke-width: 2px;
   }
-  .pz-svg .booth-status polygon { stroke: none; fill-opacity: 0.32; }
+  .pz-svg .booth-status-bg { stroke: none; fill-opacity: 0.32; }
+  .pz-svg .booth-status-marker {
+    fill-opacity: 1; stroke: #fff; vector-effect: non-scaling-stroke; stroke-width: 1.5px;
+  }
   .pz-svg .booth-labels { pointer-events: none; }
   /* When we render our own dynamic labels, hide the ones baked into the drawing. */
   .pz-svg.has-overlay .labels { display: none; }
@@ -174,13 +177,8 @@ export const PanZoom = forwardRef<PanZoomHandle, {
   cursors,
   onCursorMove,
 }, ref) {
-  // statusId -> colour, across all status types
-  const statusColor = useMemo(() => {
-    const m = new Map<string, string>();
-    (statusTypes ?? []).forEach((t) => t.statuses.forEach((s) => m.set(s.id, s.color)));
-    return m;
-  }, [statusTypes]);
-  // Ordered visible types. The first status found supplies the booth colour.
+  // Ordered visible types. The first assigned status supplies the booth background;
+  // later assigned statuses appear as small colour markers inside the booth.
   const activeStatusTypes = useMemo(() => {
     const byId = new Map((statusTypes ?? []).map((type) => [type.id, type]));
     return (activeStatusTypeIds ?? []).flatMap((id) => {
@@ -373,20 +371,51 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       const [cx, cy] = b.centroid;
       const a = b.number ? assignments?.[b.number] : undefined;
 
-      // Status fill — highest-priority visible type with a status wins.
-      let col: string | undefined;
-      for (const type of activeStatusTypes) {
-        const statusId = statusIdForType(a, type);
-        if (statusId) {
-          col = statusColor.get(statusId);
-          if (col) break;
-        }
-      }
-      if (col) {
+      const visibleStatuses = assignedStatuses(a, activeStatusTypes);
+      const [mainStatus, ...additionalStatuses] = visibleStatuses;
+
+      // The highest-priority assigned status remains the booth's full background.
+      if (mainStatus) {
         const poly = document.createElementNS(NS, "polygon");
         poly.setAttribute("points", b.polygon.map((p) => p.join(",")).join(" "));
-        poly.setAttribute("fill", col);
+        poly.setAttribute("fill", mainStatus.color);
+        poly.setAttribute("class", "booth-status-bg");
         statusG.appendChild(poly);
+      }
+
+      // Every other assigned visible status gets a solid square. Markers start in the
+      // top-right corner and wrap in rows of three, staying compact enough not to
+      // obscure the centred booth label.
+      if (additionalStatuses.length) {
+        const minDim = Math.min(bw, bh);
+        const markerSize = minDim * 0.16;
+        const markerGap = markerSize * 0.25;
+        const markerPad = markerSize * 0.3;
+        const markersPerRow = Math.min(3, additionalStatuses.length);
+        additionalStatuses.forEach((status, index) => {
+          const column = index % markersPerRow;
+          const row = Math.floor(index / markersPerRow);
+          const marker = document.createElementNS(NS, "rect");
+          marker.setAttribute(
+            "x",
+            (Math.max(...xs) - markerPad - markerSize - column * (markerSize + markerGap)).toFixed(1),
+          );
+          marker.setAttribute(
+            "y",
+            (Math.min(...ys) + markerPad + row * (markerSize + markerGap)).toFixed(1),
+          );
+          marker.setAttribute("width", markerSize.toFixed(1));
+          marker.setAttribute("height", markerSize.toFixed(1));
+          marker.setAttribute("rx", (markerSize * 0.1).toFixed(1));
+          marker.setAttribute("fill", status.color);
+          marker.setAttribute("class", "booth-status-marker");
+          marker.setAttribute("data-status-type", status.typeId);
+          marker.setAttribute("data-status", status.statusId);
+          const title = document.createElementNS(NS, "title");
+          title.textContent = `${status.typeName}: ${status.statusName}`;
+          marker.appendChild(title);
+          statusG.appendChild(marker);
+        });
       }
 
       // label — grows to nearly fill the booth, capped at a real-world max.
@@ -482,7 +511,7 @@ export const PanZoom = forwardRef<PanZoomHandle, {
 
     svg.insertBefore(statusG, svg.firstChild); // fills under the line work
     svg.appendChild(labelG); // labels on top
-  }, [world, booths, assignments, statusColor, activeStatusTypes]);
+  }, [world, booths, assignments, activeStatusTypes]);
 
   // Reflect the selected booth onto the hit layer.
   useEffect(() => {
@@ -637,7 +666,8 @@ export const PanZoom = forwardRef<PanZoomHandle, {
       .venue :is(line,polyline,path){stroke-width:${(u * 0.9).toFixed(1)}px;}
       .stand :is(line,polyline,path){stroke-width:${(u * 0.8).toFixed(1)}px;}
       .booth :is(line,polyline,path){stroke-width:${(u * 1.6).toFixed(1)}px;}
-      .booth-status polygon{stroke:none;fill-opacity:0.32;}
+      .booth-status-bg{stroke:none;fill-opacity:0.32;}
+      .booth-status-marker{fill-opacity:1;stroke:#fff;stroke-width:${(u * 1.5).toFixed(1)}px;}
       ${hasOverlay ? ".labels{display:none;}" : ""}
     `;
     const NS = "http://www.w3.org/2000/svg";

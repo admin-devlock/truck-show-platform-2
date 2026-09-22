@@ -1,5 +1,13 @@
 import type { BoothAssignment, StatusType } from "./maps";
 
+export type AssignedStatus = {
+  typeId: string;
+  typeName: string;
+  statusId: string;
+  statusName: string;
+  color: string;
+};
+
 /** Resolve a booth's status for one type. New assignments store one value per type;
  * legacy assignments keep working through their original single statusId. */
 export function statusIdForType(
@@ -20,14 +28,31 @@ export function statusIdForType(
 }
 
 /** All valid statuses currently assigned to a booth, in status-type order. */
+export function assignedStatuses(
+  assignment: BoothAssignment | undefined,
+  statusTypes: StatusType[],
+): AssignedStatus[] {
+  return statusTypes.flatMap((type) => {
+    const statusId = statusIdForType(assignment, type);
+    if (!statusId) return [];
+    const status = type.statuses.find((candidate) => candidate.id === statusId);
+    return status
+      ? [{
+          typeId: type.id,
+          typeName: type.name,
+          statusId: status.id,
+          statusName: status.name,
+          color: status.color,
+        }]
+      : [];
+  });
+}
+
 export function assignedStatusIds(
   assignment: BoothAssignment | undefined,
   statusTypes: StatusType[],
 ): string[] {
-  return statusTypes.flatMap((type) => {
-    const statusId = statusIdForType(assignment, type);
-    return statusId ? [statusId] : [];
-  });
+  return assignedStatuses(assignment, statusTypes).map((status) => status.statusId);
 }
 
 /** Read the new ordered visibility field, falling back to the old single lens. */

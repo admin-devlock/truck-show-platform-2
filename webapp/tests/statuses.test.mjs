@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   activeStatusTypeIds,
   assignedStatusIds,
+  assignedStatuses,
   statusIdForType,
 } from "../src/lib/statuses.ts";
 
@@ -24,6 +25,22 @@ test("a booth can resolve one independent status per type", () => {
   assert.equal(statusIdForType(assignment, offers), "sent");
   assert.equal(statusIdForType(assignment, compliance), "approved");
   assert.deepEqual(assignedStatusIds(assignment, [offers, compliance]), ["sent", "approved"]);
+  assert.deepEqual(assignedStatuses(assignment, [compliance, offers]), [
+    {
+      typeId: "compliance",
+      typeName: "Compliance",
+      statusId: "approved",
+      statusName: "Approved",
+      color: "#0f0",
+    },
+    {
+      typeId: "offers",
+      typeName: "Offer status",
+      statusId: "sent",
+      statusName: "Sent",
+      color: "#00f",
+    },
+  ]);
 });
 
 test("legacy single statuses resolve under their owning type", () => {
