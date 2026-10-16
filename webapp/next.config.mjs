@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Isolate optional emulator previews from the normal build/dev cache.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   // Bundle known pre-converted CAD outputs into the /api/convert server function.
   // This keeps hash-verified revisions usable on Netlify, whose Next runtime does not

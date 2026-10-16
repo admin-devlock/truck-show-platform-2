@@ -1,25 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "@/lib/auth";
 import { auth, db } from "@/lib/firebase";
 import { AUDIT_EVENT, type AuditEventType, type AuditMetadata } from "@/lib/activity";
-
-const SESSION_KEY = "truckshow.auditSession";
-
-function sessionId(): string {
-  try {
-    const existing = sessionStorage.getItem(SESSION_KEY);
-    if (existing) return existing;
-    const created = crypto.randomUUID();
-    sessionStorage.setItem(SESSION_KEY, created);
-    return created;
-  } catch {
-    return crypto.randomUUID();
-  }
-}
+import { getAuditContext } from "@/lib/audit-context";
 
 function currentMapId(path: string): string | null {
   return path.match(/^\/map\/([^/]+)/)?.[1] ?? null;
@@ -29,6 +16,7 @@ function currentMapId(path: string): string | null {
  * as navigation, searching, scrolling, panning, zooming and opening menus is excluded. */
 export function ActivityLogger() {
   const { identity } = useAuth();
+  const [loggingFailed, setLoggingFailed] = useState(false);
   const pathname = usePathname();
   const identityRef = useRef(identity);
   const pathnameRef = useRef(pathname);
@@ -38,7 +26,7 @@ export function ActivityLogger() {
   useEffect(() => {
     if (!identity || !auth.currentUser) return;
     const authUid = auth.currentUser.uid;
-    const auditSessionId = sessionId();
+    setLoggingFailed(false);
 
     const onAudit = (event: Event) => {
       const detail = (
@@ -55,23 +43,17 @@ export function ActivityLogger() {
       const relatedMapId =
         typeof detail.metadata?.mapId === "string" ? detail.metadata.mapId : null;
       void addDoc(collection(db, "activity"), {
-        schemaVersion: 1,
+        ...getAuditContext(actor),
         eventType: detail.eventType ?? "mutation",
         action: detail.action.replace(/\s+/g, " ").trim().slice(0, 120),
         path,
         mapId: relatedMapId ?? currentMapId(path),
-        sessionId: auditSessionId,
-        authUid,
-        actor: {
-          uid: actor.uid,
-          name: actor.name,
-          isGuest: actor.isGuest,
-        },
         metadata: detail.metadata ?? {},
         clientAt: Date.now(),
         createdAt: serverTimestamp(),
-      }).catch(() => {
-        // Audit logging must never make the completed user action fail.
+      }).catch((error) => {
+        console.warn("Activity recording failed", error?.code || "unknown");
+        setLoggingFailed(true);
       });
     };
 
@@ -79,5 +61,9 @@ export function ActivityLogger() {
     return () => window.removeEventListener(AUDIT_EVENT, onAudit);
   }, [identity?.uid]);
 
-  return null;
+  if (!loggingFailed) return null;
+  return <div role="alert" className="fixed bottom-4 left-4 z-50 max-w-sm rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 shadow">
+    Some activity could not be recorded. Check your connection and refresh. Completed actions have not been undone.
+    <button className="ml-2 underline" onClick={() => setLoggingFailed(false)}>Dismiss</button>
+  </div>;
 }

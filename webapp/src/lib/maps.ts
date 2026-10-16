@@ -29,6 +29,9 @@ import {
 } from "./remap";
 import { activeStatusTypeIds as normalizeActiveStatusTypeIds } from "./statuses";
 import { auditAction } from "./activity";
+import { getAuditContext } from "./audit-context";
+import type { BoothEdit } from "./booth-edit";
+import { commitAuditedBoothEdit } from "./audited-booth-store.mjs";
 
 export type MapStatus = "processing" | "ready" | "error";
 
@@ -318,8 +321,19 @@ export async function unsplitBooth(id: string, sourceNumber: string) {
 }
 
 export async function setBoothExhibitor(id: string, boothNumber: string, exhibitor: string) {
-  await setDoc(boothMeta(id), { assignments: { [boothNumber]: { exhibitor } } }, { merge: true });
-  auditAction("Change booth exhibitor", { mapId: id, boothNumber });
+  await saveAuditedBoothEdit(id, { kind: "exhibitor", boothNumber, exhibitor });
+}
+
+async function saveAuditedBoothEdit(mapId: string, edit: BoothEdit) {
+  const context = getAuditContext();
+  try {
+    await commitAuditedBoothEdit(db, mapId, edit, context);
+  } catch (error) {
+    // One diagnostic per failed user operation, never one per retry or keystroke.
+    const code = typeof error === "object" && error && "code" in error ? String(error.code) : "validation-error";
+    auditAction("Booth edit failed", { mapId, boothNumber: edit.boothNumber, field: edit.kind, code }, "error");
+    throw error;
+  }
 }
 
 export async function setBoothStatus(
@@ -328,16 +342,7 @@ export async function setBoothStatus(
   statusTypeId: string,
   statusId: string | null,
 ) {
-  await setDoc(
-    boothMeta(id),
-    { assignments: { [boothNumber]: { statusIdsByType: { [statusTypeId]: statusId } } } },
-    { merge: true },
-  );
-  auditAction(statusId ? "Set booth status" : "Clear booth status", {
-    mapId: id,
-    boothNumber,
-    statusTypeId,
-  });
+  await saveAuditedBoothEdit(id, { kind: "status", boothNumber, statusTypeId, statusId });
 }
 
 /** Per-booth label metric: show area (m², the default) or width × depth on the map. */

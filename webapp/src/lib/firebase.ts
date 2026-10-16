@@ -2,8 +2,8 @@
 // web apps ship them to the browser; access is gated by Auth + security rules, not
 // by hiding these keys.
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider, connectAuthEmulator } from "firebase/auth";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -29,10 +29,21 @@ const firebaseConfig = {
   }
 }
 
-const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const isNewApp = getApps().length === 0;
+const app: FirebaseApp = isNewApp ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+// Explicitly isolated browser testing: never route a production project to emulators.
+if (process.env.NEXT_PUBLIC_FIREBASE_EMULATORS === "true") {
+  if (process.env.NODE_ENV !== "development" || !firebaseConfig.projectId?.startsWith("demo-")) {
+    throw new Error("Emulator mode requires development and a demo- project ID.");
+  }
+  if (isNewApp) {
+    connectAuthEmulator(auth, "http://127.0.0.1:9098", { disableWarnings: true });
+    connectFirestoreEmulator(db, "127.0.0.1", 8088);
+  }
+}
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 export default app;

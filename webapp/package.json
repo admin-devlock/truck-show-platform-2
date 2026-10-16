@@ -11,7 +11,10 @@
     "export:activity": "node scripts/export_activity.mjs",
     "test:concurrency": "node tests/concurrency.test.mjs",
     "test:remap": "node --test tests/remap.test.mjs",
-    "test:statuses": "node --test tests/statuses.test.mjs"
+    "test:statuses": "node --test tests/statuses.test.mjs",
+    "test:audit": "node --test tests/audited-edits.test.mjs",
+    "test:stands": "node --test tests/stand-adjustments.test.mjs",
+    "test:audit:emulator": "npx --yes firebase-tools@13.35.1 emulators:exec --project demo-truckshow --only auth,firestore --config firebase.test.json 'node tests/audited-edits.emulator.mjs'"
   },
   "dependencies": {
     "firebase": "^11.1.0",

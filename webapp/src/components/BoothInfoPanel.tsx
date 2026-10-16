@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Booth } from "./PanZoom";
 import {
   setBoothExhibitor,
@@ -16,6 +16,7 @@ import {
 import { splitPolygon, polygonArea, centroid, bbox, type Pt } from "@/lib/geometry";
 import { boothShape, boothKindLabel } from "@/lib/booths";
 import { statusIdForType } from "@/lib/statuses";
+import { boothSaveErrorMessage } from "@/lib/booth-edit";
 
 /* Slide-in panel: selected booth details + editable exhibitor name and status. */
 export function BoothInfoPanel({
@@ -42,6 +43,14 @@ export function BoothInfoPanel({
   const kindTogglable =
     kindEditable && !!booth.number && (booth.kind === "built" || booth.kind === "space_only");
   const [name, setName] = useState(assignment?.exhibitor ?? "");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savingFields, setSavingFields] = useState<string[]>([]);
+  const pending = useRef(new Set<string>());
+  const isSaving = (field: string) => savingFields.includes(`${booth.number}:${field}`);
+  const saving = savingFields.some(key => key.startsWith(`${booth.number}:`));
+  const selectedNumber = useRef(booth.number);
+  selectedNumber.current = booth.number;
+  useEffect(() => setSaveError(null), [booth.number]);
   useEffect(() => setName(assignment?.exhibitor ?? ""), [assignment?.exhibitor, booth.number]);
 
   // Split-a-booth-in-half (adaptability when a booth is subdivided/relabelled).
@@ -98,15 +107,27 @@ export function BoothInfoPanel({
     }
   };
 
+  const save = async (field: string, operation: () => Promise<void>) => {
+    const key = `${booth.number}:${field}`;
+    if (pending.current.has(key)) return;
+    pending.current.add(key);
+    const number = booth.number;
+    setSavingFields([...pending.current]);
+    setSaveError(null);
+    try { await operation(); }
+    catch (error) {
+      if (selectedNumber.current === number) setSaveError(boothSaveErrorMessage(error));
+    } finally { pending.current.delete(key); setSavingFields([...pending.current]); }
+  };
   const saveName = () => {
-    if (canAssign && name !== (assignment?.exhibitor ?? "")) {
-      setBoothExhibitor(mapId, booth.number!, name.trim());
+    if (canAssign && name.trim() !== (assignment?.exhibitor ?? "")) {
+      void save("name", () => setBoothExhibitor(mapId, booth.number!, name.trim()));
     }
   };
   const pickStatus = (type: StatusType, id: string) => {
     if (!canAssign) return;
     const current = statusIdForType(assignment, type);
-    void setBoothStatus(mapId, booth.number!, type.id, current === id ? null : id);
+    void save("status", () => setBoothStatus(mapId, booth.number!, type.id, current === id ? null : id));
   };
 
   return (
@@ -183,7 +204,8 @@ export function BoothInfoPanel({
                     return (
                       <button
                         key={mode}
-                        onClick={() => void setBoothLabelMode(mapId, booth.number!, mode)}
+                        onClick={() => void save("label", () => setBoothLabelMode(mapId, booth.number!, mode))}
+                        disabled={isSaving("label")}
                         aria-pressed={active}
                         className={`px-2 py-0.5 ${
                           active
@@ -208,6 +230,7 @@ export function BoothInfoPanel({
             Exhibitor
           </label>
           <input
+            disabled={isSaving("name")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={saveName}
@@ -215,7 +238,6 @@ export function BoothInfoPanel({
             placeholder="Unassigned"
             className="w-full border border-[color:var(--color-line)] rounded-md px-2.5 py-1.5 text-sm mb-4 outline-none focus:border-[color:var(--color-accent)] focus:ring-1 focus:ring-[color:var(--color-accent)]"
           />
-
           {statusTypes.length > 0 && (
             <div className="space-y-3">
               {statusTypes.map((t) => {
@@ -229,6 +251,8 @@ export function BoothInfoPanel({
                         <button
                           key={s.id}
                           onClick={() => pickStatus(t, s.id)}
+                          disabled={isSaving("status")}
+                          aria-pressed={active}
                           className="text-xs px-2 py-1 rounded-full border transition"
                           style={{
                             borderColor: s.color,
@@ -245,6 +269,10 @@ export function BoothInfoPanel({
               })}
             </div>
           )}
+          {/* Keep feedback below the controls: a name blur must not move the
+              status button between pointer-down and click. */}
+          {saving && <p role="status" className="mt-3 text-xs">Saving…</p>}
+          {saveError && <p role="alert" className="mt-3 text-sm text-red-700">{saveError}</p>}
         </>
       ) : (
         <p className="text-sm text-[color:var(--color-ink-soft)]">

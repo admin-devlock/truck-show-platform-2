@@ -3,7 +3,7 @@
 export const AUDIT_EVENT = "truckshow:audit";
 
 export type AuditMetadata = Record<string, string | number | boolean | null>;
-export type AuditEventType = "mutation" | "export";
+export type AuditEventType = "mutation" | "export" | "error";
 
 /** Report a meaningful non-click interaction to the global activity logger. */
 export function auditAction(
