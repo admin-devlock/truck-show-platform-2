@@ -14,6 +14,7 @@
     "test:statuses": "node --test tests/statuses.test.mjs",
     "test:audit": "node --test tests/audited-edits.test.mjs",
     "test:stands": "node --test tests/stand-adjustments.test.mjs",
+    "test:m12": "node --test tests/plaza-m12-split.test.mjs",
     "test:audit:emulator": "npx --yes firebase-tools@13.35.1 emulators:exec --project demo-truckshow --only auth,firestore --config firebase.test.json 'node tests/audited-edits.emulator.mjs'"
   },
   "dependencies": {
